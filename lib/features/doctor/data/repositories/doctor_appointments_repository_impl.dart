@@ -1,4 +1,3 @@
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
@@ -33,6 +32,49 @@ class DoctorAppointmentsRepositoryImpl
     );
 
     return appointments.map(_fromMap).toList();
+  }
+
+  Stream<List<DoctorAppointment>> watchDoctorAppointments() {
+    final session = FirebaseAuthRepository.instance.session;
+    final organizationId = session.organizationId;
+    final doctorId = session.doctorId;
+
+    if (organizationId == null ||
+        doctorId == null ||
+        organizationId.isEmpty ||
+        doctorId.isEmpty) {
+      return Stream.error(
+        StateError(
+          'لا توجد هوية طبيب ومؤسسة مرتبطة بجلسة المستخدم.',
+        ),
+      );
+    }
+
+    return FirebaseFirestore.instance
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('appointments')
+        .where(
+      'organizationId',
+      isEqualTo: organizationId,
+    )
+        .where(
+      'doctorId',
+      isEqualTo: doctorId,
+    )
+        .snapshots()
+        .map(
+          (snapshot) {
+        return snapshot.docs
+            .map(
+              (document) => _fromMap({
+            ...document.data(),
+            'id': document.id,
+          }),
+        )
+            .toList();
+      },
+    );
   }
 
   DoctorAppointment _fromMap(Map<String, dynamic> appointment) {
@@ -83,6 +125,7 @@ class DoctorAppointmentsRepositoryImpl
   String _formatDateTime(DateTime date) {
     final day = date.day.toString().padLeft(2, '0');
     final month = date.month.toString().padLeft(2, '0');
+
     return '$day/$month/${date.year}';
   }
 
@@ -162,7 +205,10 @@ class DoctorAppointmentsRepositoryImpl
     return null;
   }
 
-  bool _sameDate(DateTime first, DateTime second) {
+  bool _sameDate(
+      DateTime first,
+      DateTime second,
+      ) {
     return first.year == second.year &&
         first.month == second.month &&
         first.day == second.day;
