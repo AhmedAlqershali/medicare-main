@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/account_role.dart';
-import '../models/account_status.dart';
 import '../models/auth_result.dart';
 import '../models/auth_session.dart';
 import '../models/auth_user.dart';

@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import '../../auth/models/account_status.dart';
 import '../../auth/models/organization.dart';
 import '../../auth/services/firebase_auth_repository.dart';
-import '../firestore_paths.dart';
 import '../firestore_service.dart';
 
 class FirestoreClinicRepository {

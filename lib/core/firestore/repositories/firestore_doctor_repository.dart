@@ -6,7 +6,6 @@ import '../../auth/models/doctor.dart';
 import '../../auth/models/invitation.dart';
 import '../../auth/models/invitation_status.dart';
 import '../../auth/repositories/doctor_repository.dart';
-import '../firestore_paths.dart';
 import '../firestore_service.dart';
 
 class FirestoreDoctorRepository implements DoctorRepository {
