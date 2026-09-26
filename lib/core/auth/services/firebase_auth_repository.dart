@@ -24,11 +24,16 @@ class FirebaseAuthRepository implements AuthRepository {
   static final instance = FirebaseAuthRepository._();
 
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
-  final FirestoreDoctorRepository _firestoreDoctorRepository = FirestoreDoctorRepository.instance;
-  final FirestoreOrganizationRepository _firestoreOrganizationRepository = FirestoreOrganizationRepository.instance;
-  final FirestorePatientRepository _firestorePatientRepository = FirestorePatientRepository.instance;
-  final FirestoreInvitationRepository _firestoreInvitationRepository = FirestoreInvitationRepository.instance;
-  final FirestoreUserProfileRepository _firestoreUserProfileRepository = FirestoreUserProfileRepository();
+  final FirestoreDoctorRepository _firestoreDoctorRepository =
+      FirestoreDoctorRepository.instance;
+  final FirestoreOrganizationRepository _firestoreOrganizationRepository =
+      FirestoreOrganizationRepository.instance;
+  final FirestorePatientRepository _firestorePatientRepository =
+      FirestorePatientRepository.instance;
+  final FirestoreInvitationRepository _firestoreInvitationRepository =
+      FirestoreInvitationRepository.instance;
+  final FirestoreUserProfileRepository _firestoreUserProfileRepository =
+      FirestoreUserProfileRepository();
   AuthSession _session = const AuthSession.signedOut();
 
   @override
@@ -70,20 +75,35 @@ class FirebaseAuthRepository implements AuthRepository {
     }
   }
 
-  Future<User?> _createFirebaseAccountIfNeeded({required String email, required String password}) async {
+  Future<User?> _createFirebaseAccountIfNeeded({
+    required String email,
+    required String password,
+  }) async {
     try {
-      final credential = await _firebaseAuth.createUserWithEmailAndPassword(email: email.trim(), password: password);
+      final credential = await _firebaseAuth.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
       return credential.user;
     } on FirebaseAuthException catch (exception) {
       if (exception.code == 'email-already-in-use') {
         try {
-          final credential = await _firebaseAuth.signInWithEmailAndPassword(email: email.trim(), password: password);
+          final credential = await _firebaseAuth.signInWithEmailAndPassword(
+            email: email.trim(),
+            password: password,
+          );
           return credential.user;
         } on FirebaseAuthException catch (signInException) {
-          throw FirebaseAuthException(code: signInException.code, message: _mapFirebaseAuthError(signInException));
+          throw FirebaseAuthException(
+            code: signInException.code,
+            message: _mapFirebaseAuthError(signInException),
+          );
         }
       }
-      throw FirebaseAuthException(code: exception.code, message: _mapFirebaseAuthError(exception));
+      throw FirebaseAuthException(
+        code: exception.code,
+        message: _mapFirebaseAuthError(exception),
+      );
     }
   }
 
@@ -107,50 +127,72 @@ class FirebaseAuthRepository implements AuthRepository {
     }
   }
 
-    AuthUser _authUserForPatient(Patient patient, String firebaseUid) => AuthUser(
-      id: firebaseUid,
-        name: patient.name,
-        email: patient.email,
-        role: AccountRole.patient,
-        organizationId: patient.organizationId,
-        doctorId: patient.doctorId,
-        patientId: patient.id,
-      );
+  AuthUser _authUserForPatient(Patient patient, String firebaseUid) => AuthUser(
+    id: firebaseUid,
+    name: patient.name,
+    email: patient.email,
+    role: AccountRole.patient,
+    organizationId: patient.organizationId,
+    doctorId: patient.doctorId,
+    patientId: patient.id,
+  );
 
-    AuthUser _authUserForDoctor(Doctor doctor, String firebaseUid) => AuthUser(
-      id: firebaseUid,
-        name: doctor.name,
-        email: doctor.email,
-        role: AccountRole.doctor,
-        organizationId: doctor.organizationId,
-        doctorId: doctor.id,
-      );
+  AuthUser _authUserForDoctor(Doctor doctor, String firebaseUid) => AuthUser(
+    id: firebaseUid,
+    name: doctor.name,
+    email: doctor.email,
+    role: AccountRole.doctor,
+    organizationId: doctor.organizationId,
+    doctorId: doctor.id,
+  );
 
-    AuthUser _authUserForOrganization(Organization organization, String firebaseUid) => AuthUser(
-      id: firebaseUid,
-        name: organization.name,
-        email: organization.email,
-        role: AccountRole.organization,
-        organizationId: organization.id,
-      );
+  AuthUser _authUserForOrganization(
+    Organization organization,
+    String firebaseUid,
+  ) => AuthUser(
+    id: firebaseUid,
+    name: organization.name,
+    email: organization.email,
+    role: AccountRole.organization,
+    organizationId: organization.id,
+  );
 
   @override
-  Future<AuthResult> login({required AccountRole role, required String email, required String password}) async {
+  Future<AuthResult> login({
+    required AccountRole role,
+    required String email,
+    required String password,
+  }) async {
     final normalizedEmail = email.trim();
     if (normalizedEmail.isEmpty || password.isEmpty) {
-      return const AuthResult(success: false, message: 'أدخل البريد الإلكتروني وكلمة المرور.');
+      return const AuthResult(
+        success: false,
+        message: 'أدخل البريد الإلكتروني وكلمة المرور.',
+      );
     }
 
     try {
-      final userCredential = await _firebaseAuth.signInWithEmailAndPassword(email: normalizedEmail, password: password);
+      final userCredential = await _firebaseAuth.signInWithEmailAndPassword(
+        email: normalizedEmail,
+        password: password,
+      );
       switch (role) {
         case AccountRole.organization:
-          final organizationRecord = await _firestoreOrganizationRepository.fetchOrganizationByEmail(normalizedEmail);
+          final organizationRecord = await _firestoreOrganizationRepository
+              .fetchOrganizationByEmail(normalizedEmail);
           if (organizationRecord == null) {
-            return const AuthResult(success: false, message: 'لا يوجد حساب مؤسسة مطابق لهذا البريد.');
+            return const AuthResult(
+              success: false,
+              message: 'لا يوجد حساب مؤسسة مطابق لهذا البريد.',
+            );
           }
-          if (organizationRecord.firebaseUid != null && organizationRecord.firebaseUid != userCredential.user?.uid) {
-            return const AuthResult(success: false, message: 'هذه المؤسسة مرتبطة بالفعل بحساب Firebase مختلف ولا يمكن استخدامها هنا.');
+          if (organizationRecord.firebaseUid != null &&
+              organizationRecord.firebaseUid != userCredential.user?.uid) {
+            return const AuthResult(
+              success: false,
+              message:
+                  'هذه المؤسسة مرتبطة بالفعل بحساب Firebase مختلف ولا يمكن استخدامها هنا.',
+            );
           }
           await _firestoreOrganizationRepository.linkFirebaseUid(
             organizationId: organizationRecord.id,
@@ -164,21 +206,41 @@ class FirebaseAuthRepository implements AuthRepository {
           );
           _session = AuthSession(
             isAuthenticated: true,
-              currentUser: _authUserForOrganization(organizationRecord, userCredential.user!.uid),
+            currentUser: _authUserForOrganization(
+              organizationRecord,
+              userCredential.user!.uid,
+            ),
             currentRole: AccountRole.organization,
             organizationId: organizationRecord.id,
           );
-          return AuthResult(success: true, message: 'تم تسجيل الدخول بنجاح.', session: _session);
+          return AuthResult(
+            success: true,
+            message: 'تم تسجيل الدخول بنجاح.',
+            session: _session,
+          );
         case AccountRole.doctor:
-          final profile = await _firestoreUserProfileRepository.fetchUserProfile(userCredential.user!.uid);
-            final doctorRecord = profile?.doctorId != null && profile?.organizationId != null
-              ? await _firestoreDoctorRepository.fetchDoctorByIdForOrganization(profile!.organizationId!, profile.doctorId!)
+          final profile = await _firestoreUserProfileRepository
+              .fetchUserProfile(userCredential.user!.uid);
+          final doctorRecord =
+              profile?.doctorId != null && profile?.organizationId != null
+              ? await _firestoreDoctorRepository.fetchDoctorByIdForOrganization(
+                  profile!.organizationId!,
+                  profile.doctorId!,
+                )
               : null;
           if (doctorRecord == null) {
-            return const AuthResult(success: false, message: 'لا يوجد سجل طبيب مطابق لهذا البريد الإلكتروني.');
+            return const AuthResult(
+              success: false,
+              message: 'لا يوجد سجل طبيب مطابق لهذا البريد الإلكتروني.',
+            );
           }
-          if (doctorRecord.firebaseUid != null && doctorRecord.firebaseUid != userCredential.user?.uid) {
-            return const AuthResult(success: false, message: 'هذا الطبيب مرتبط بالفعل بحساب Firebase مختلف ولا يمكن نقله.');
+          if (doctorRecord.firebaseUid != null &&
+              doctorRecord.firebaseUid != userCredential.user?.uid) {
+            return const AuthResult(
+              success: false,
+              message:
+                  'هذا الطبيب مرتبط بالفعل بحساب Firebase مختلف ولا يمكن نقله.',
+            );
           }
           await _firestoreDoctorRepository.linkFirebaseUidForOrganization(
             organizationId: doctorRecord.organizationId,
@@ -194,25 +256,49 @@ class FirebaseAuthRepository implements AuthRepository {
           );
           _session = AuthSession(
             isAuthenticated: true,
-              currentUser: _authUserForDoctor(doctorRecord, userCredential.user!.uid),
+            currentUser: _authUserForDoctor(
+              doctorRecord,
+              userCredential.user!.uid,
+            ),
             currentRole: AccountRole.doctor,
             organizationId: doctorRecord.organizationId,
             doctorId: doctorRecord.id,
           );
-          return AuthResult(success: true, message: 'تم تسجيل الدخول بنجاح.', session: _session);
+          return AuthResult(
+            success: true,
+            message: 'تم تسجيل الدخول بنجاح.',
+            session: _session,
+          );
         case AccountRole.patient:
-            final profile = await _firestoreUserProfileRepository.fetchUserProfile(userCredential.user!.uid);
-            final patientRecord = profile?.patientId != null && profile?.organizationId != null
-              ? await _firestorePatientRepository.fetchPatientById(profile!.patientId!, organizationId: profile.organizationId)
+          final profile = await _firestoreUserProfileRepository
+              .fetchUserProfile(userCredential.user!.uid);
+          final patientRecord =
+              profile?.patientId != null && profile?.organizationId != null
+              ? await _firestorePatientRepository.fetchPatientById(
+                  profile!.patientId!,
+                  organizationId: profile.organizationId,
+                )
               : null;
           if (patientRecord == null) {
-            return const AuthResult(success: false, message: 'لا يوجد سجل مريض مطابق لهذا البريد الإلكتروني.');
+            return const AuthResult(
+              success: false,
+              message: 'لا يوجد سجل مريض مطابق لهذا البريد الإلكتروني.',
+            );
           }
           if (!patientRecord.accountActivated) {
-            return const AuthResult(success: false, message: 'هذا الحساب غير مفعّل بعد. استخدم تفعيل حساب المريض أولاً.');
+            return const AuthResult(
+              success: false,
+              message:
+                  'هذا الحساب غير مفعّل بعد. استخدم تفعيل حساب المريض أولاً.',
+            );
           }
-          if (patientRecord.firebaseUid != null && patientRecord.firebaseUid != userCredential.user?.uid) {
-            return const AuthResult(success: false, message: 'هذا المريض مرتبط بالفعل بحساب Firebase مختلف ولا يمكن نقله.');
+          if (patientRecord.firebaseUid != null &&
+              patientRecord.firebaseUid != userCredential.user?.uid) {
+            return const AuthResult(
+              success: false,
+              message:
+                  'هذا المريض مرتبط بالفعل بحساب Firebase مختلف ولا يمكن نقله.',
+            );
           }
           await _firestorePatientRepository.activatePatient(
             patientId: patientRecord.id,
@@ -229,57 +315,122 @@ class FirebaseAuthRepository implements AuthRepository {
           );
           _session = AuthSession(
             isAuthenticated: true,
-              currentUser: _authUserForPatient(patientRecord, userCredential.user!.uid),
+            currentUser: _authUserForPatient(
+              patientRecord,
+              userCredential.user!.uid,
+            ),
             currentRole: AccountRole.patient,
             organizationId: patientRecord.organizationId,
             doctorId: patientRecord.doctorId,
             patientId: patientRecord.id,
           );
-          return AuthResult(success: true, message: 'تم تسجيل الدخول بنجاح.', session: _session);
+          return AuthResult(
+            success: true,
+            message: 'تم تسجيل الدخول بنجاح.',
+            session: _session,
+          );
       }
     } on FirebaseAuthException catch (exception) {
-      return AuthResult(success: false, message: _mapFirebaseAuthError(exception));
+      return AuthResult(
+        success: false,
+        message: _mapFirebaseAuthError(exception),
+      );
     } on StateError catch (error) {
       return AuthResult(success: false, message: error.message);
     }
   }
 
-  Future<Invitation?> _findPendingInvitationForEmail({required AccountRole role, required String email}) async {
-    return _firestoreInvitationRepository.fetchPendingInvitationForEmailAndRole(email: email, role: role);
+  Future<Invitation?> _findPendingInvitationForEmail({
+    required AccountRole role,
+    required String email,
+  }) async {
+    return _firestoreInvitationRepository.fetchPendingInvitationForEmailAndRole(
+      email: email,
+      role: role,
+    );
   }
 
   @override
-  Future<AuthResult> activateInvitation({required AccountRole role, required String email, required String password}) async {
+  Future<AuthResult> activateInvitation({
+    required AccountRole role,
+    required String email,
+    required String password,
+  }) async {
     final normalizedEmail = email.trim();
-    if (normalizedEmail.isEmpty) return const AuthResult(success: false, message: 'أدخل البريد الإلكتروني المدعو.');
-    if (password.length < 6) return const AuthResult(success: false, message: 'استخدم ٦ أحرف أو أكثر لكلمة المرور.');
+    if (normalizedEmail.isEmpty)
+      return const AuthResult(
+        success: false,
+        message: 'أدخل البريد الإلكتروني المدعو.',
+      );
+    if (password.length < 6)
+      return const AuthResult(
+        success: false,
+        message: 'استخدم ٦ أحرف أو أكثر لكلمة المرور.',
+      );
 
     try {
-      final userCredential = await _createFirebaseAccountIfNeeded(email: normalizedEmail, password: password);
+      final userCredential = await _createFirebaseAccountIfNeeded(
+        email: normalizedEmail,
+        password: password,
+      );
       if (userCredential == null) {
-        return const AuthResult(success: false, message: 'تعذر إنشاء حساب المستخدم في Firebase.');
+        return const AuthResult(
+          success: false,
+          message: 'تعذر إنشاء حساب المستخدم في Firebase.',
+        );
       }
 
-      final invitation = await _findPendingInvitationForEmail(role: role, email: normalizedEmail);
+      final invitation = await _findPendingInvitationForEmail(
+        role: role,
+        email: normalizedEmail,
+      );
       if (invitation == null) {
-        return const AuthResult(success: false, message: 'لم نجد دعوة بهذا البريد الإلكتروني.');
+        return const AuthResult(
+          success: false,
+          message: 'لم نجد دعوة بهذا البريد الإلكتروني.',
+        );
       }
 
       if (role == AccountRole.doctor) {
-          final doctorRecord = invitation.doctorId == null
+        final doctorRecord = invitation.doctorId == null
             ? null
-            : await _firestoreDoctorRepository.fetchDoctorByIdForOrganization(invitation.organizationId, invitation.doctorId!);
+            : await _firestoreDoctorRepository.fetchDoctorByIdForOrganization(
+                invitation.organizationId,
+                invitation.doctorId!,
+              );
         if (doctorRecord == null) {
-          return const AuthResult(success: false, message: 'لا يوجد سجل طبيب مطابق لهذا البريد الإلكتروني في العلاقة الموثوقة.');
+          return const AuthResult(
+            success: false,
+            message:
+                'لا يوجد سجل طبيب مطابق لهذا البريد الإلكتروني في العلاقة الموثوقة.',
+          );
         }
         if (doctorRecord.organizationId != invitation.organizationId) {
-          return const AuthResult(success: false, message: 'لا يملك هذا الطبيب صلاحية تسجيل الدخول في هذه المؤسسة.');
+          return const AuthResult(
+            success: false,
+            message: 'لا يملك هذا الطبيب صلاحية تسجيل الدخول في هذه المؤسسة.',
+          );
         }
-        if (doctorRecord.firebaseUid != null && doctorRecord.firebaseUid != userCredential.uid) {
-          return const AuthResult(success: false, message: 'هذا الطبيب مرتبط بالفعل بحساب Firebase مختلف ولا يمكن نقله.');
+        if (doctorRecord.firebaseUid != null &&
+            doctorRecord.firebaseUid != userCredential.uid) {
+          return const AuthResult(
+            success: false,
+            message:
+                'هذا الطبيب مرتبط بالفعل بحساب Firebase مختلف ولا يمكن نقله.',
+          );
         }
-        await _firestoreDoctorRepository.linkFirebaseUidForOrganization(organizationId: invitation.organizationId, doctorId: doctorRecord.id, firebaseUid: userCredential.uid, email: normalizedEmail);
-        await _firestoreUserProfileRepository.linkDoctorProfile(uid: userCredential.uid, email: normalizedEmail, doctorId: doctorRecord.id, organizationId: doctorRecord.organizationId);
+        await _firestoreDoctorRepository.linkFirebaseUidForOrganization(
+          organizationId: invitation.organizationId,
+          doctorId: doctorRecord.id,
+          firebaseUid: userCredential.uid,
+          email: normalizedEmail,
+        );
+        await _firestoreUserProfileRepository.linkDoctorProfile(
+          uid: userCredential.uid,
+          email: normalizedEmail,
+          doctorId: doctorRecord.id,
+          organizationId: doctorRecord.organizationId,
+        );
       } else {
         await _firestoreUserProfileRepository.createOrUpdateUserProfile(
           uid: userCredential.uid,
@@ -294,12 +445,23 @@ class FirebaseAuthRepository implements AuthRepository {
         userId: userCredential.uid,
         acceptedAt: DateTime.now(),
       );
-      await _firestoreInvitationRepository.saveInvitation(organizationId: invitation.organizationId, invitation: updatedInvitation);
+      await _firestoreInvitationRepository.saveInvitation(
+        organizationId: invitation.organizationId,
+        invitation: updatedInvitation,
+      );
       _session = AuthSession(
         isAuthenticated: true,
         currentUser: AuthUser(
-            id: userCredential.uid,
-          name: role == AccountRole.doctor ? (await _firestoreDoctorRepository.fetchDoctorByIdForOrganization(invitation.organizationId, invitation.doctorId!))?.name ?? normalizedEmail : normalizedEmail,
+          id: userCredential.uid,
+          name: role == AccountRole.doctor
+              ? (await _firestoreDoctorRepository
+                            .fetchDoctorByIdForOrganization(
+                              invitation.organizationId,
+                              invitation.doctorId!,
+                            ))
+                        ?.name ??
+                    normalizedEmail
+              : normalizedEmail,
           email: normalizedEmail,
           role: role,
           organizationId: invitation.organizationId,
@@ -309,19 +471,37 @@ class FirebaseAuthRepository implements AuthRepository {
         organizationId: invitation.organizationId,
         doctorId: role == AccountRole.doctor ? invitation.doctorId : null,
       );
-      return AuthResult(success: true, message: 'تم تفعيل الحساب بنجاح.', session: _session);
+      return AuthResult(
+        success: true,
+        message: 'تم تفعيل الحساب بنجاح.',
+        session: _session,
+      );
     } on FirebaseAuthException catch (exception) {
-      return AuthResult(success: false, message: exception.message ?? _mapFirebaseAuthError(exception));
+      return AuthResult(
+        success: false,
+        message: exception.message ?? _mapFirebaseAuthError(exception),
+      );
     } on StateError catch (error) {
       return AuthResult(success: false, message: error.message);
     }
   }
 
   @override
-  Future<AuthResult> activatePatientAccount({required String email, required String password}) async {
+  Future<AuthResult> activatePatientAccount({
+    required String email,
+    required String password,
+  }) async {
     final normalizedEmail = email.trim().toLowerCase();
-    if (normalizedEmail.isEmpty) return const AuthResult(success: false, message: 'أدخل البريد الإلكتروني الخاص بالمريض.');
-    if (password.length < 6) return const AuthResult(success: false, message: 'استخدم ٦ أحرف أو أكثر لكلمة المرور.');
+    if (normalizedEmail.isEmpty)
+      return const AuthResult(
+        success: false,
+        message: 'أدخل البريد الإلكتروني الخاص بالمريض.',
+      );
+    if (password.length < 6)
+      return const AuthResult(
+        success: false,
+        message: 'استخدم ٦ أحرف أو أكثر لكلمة المرور.',
+      );
 
     Patient? patientRecord;
     User? firebaseUser;
@@ -330,9 +510,13 @@ class FirebaseAuthRepository implements AuthRepository {
     var commitOutcomeUnknown = false;
 
     try {
-      patientRecord = await _firestorePatientRepository.fetchPendingPatientByEmail(normalizedEmail);
+      patientRecord = await _firestorePatientRepository
+          .fetchPendingPatientByEmail(normalizedEmail);
       if (patientRecord == null) {
-        return const AuthResult(success: false, message: 'لا يوجد سجل مريض معلّق بهذا البريد الإلكتروني.');
+        return const AuthResult(
+          success: false,
+          message: 'لا يوجد سجل مريض معلّق بهذا البريد الإلكتروني.',
+        );
       }
       if (patientRecord.email.trim().toLowerCase() != normalizedEmail ||
           patientRecord.id.isEmpty ||
@@ -340,7 +524,10 @@ class FirebaseAuthRepository implements AuthRepository {
           patientRecord.doctorId.isEmpty ||
           patientRecord.accountActivated ||
           patientRecord.firebaseUid != null) {
-        return const AuthResult(success: false, message: 'بيانات سجل المريض غير صالحة للتفعيل.');
+        return const AuthResult(
+          success: false,
+          message: 'بيانات سجل المريض غير صالحة للتفعيل.',
+        );
       }
 
       final account = await _createPatientFirebaseAccount(
@@ -350,15 +537,23 @@ class FirebaseAuthRepository implements AuthRepository {
       firebaseUser = account.user;
       createdAuthAccount = account.created;
       if (firebaseUser == null) {
-        return const AuthResult(success: false, message: 'تعذر إنشاء حساب المريض في Firebase.');
+        return const AuthResult(
+          success: false,
+          message: 'تعذر إنشاء حساب المريض في Firebase.',
+        );
       }
-      final profile = await _firestoreUserProfileRepository.fetchUserProfile(firebaseUser.uid);
+      final profile = await _firestoreUserProfileRepository.fetchUserProfile(
+        firebaseUser.uid,
+      );
       if (profile != null &&
           (profile.email.trim().toLowerCase() != normalizedEmail ||
-            profile.role != AccountRole.patient ||
-              (profile.patientId != null && profile.patientId != patientRecord.id) ||
-              (profile.organizationId != null && profile.organizationId != patientRecord.organizationId) ||
-              (profile.doctorId != null && profile.doctorId != patientRecord.doctorId))) {
+              profile.role != AccountRole.patient ||
+              (profile.patientId != null &&
+                  profile.patientId != patientRecord.id) ||
+              (profile.organizationId != null &&
+                  profile.organizationId != patientRecord.organizationId) ||
+              (profile.doctorId != null &&
+                  profile.doctorId != patientRecord.doctorId))) {
         throw StateError('حساب Firebase مرتبط بسجل مريض أو دور مختلف.');
       }
 
@@ -383,12 +578,15 @@ class FirebaseAuthRepository implements AuthRepository {
         profileLinked = true;
       } catch (_) {
         commitOutcomeUnknown = true;
-        final persistedPatient = await _firestorePatientRepository.fetchPatientById(
-          patientRecord.id,
-          organizationId: patientRecord.organizationId,
-        );
-        final persistedProfile = await _firestoreUserProfileRepository.fetchUserProfile(firebaseUser.uid);
-        profileLinked = persistedPatient?.accountActivated == true &&
+        final persistedPatient = await _firestorePatientRepository
+            .fetchPatientById(
+              patientRecord.id,
+              organizationId: patientRecord.organizationId,
+            );
+        final persistedProfile = await _firestoreUserProfileRepository
+            .fetchUserProfile(firebaseUser.uid);
+        profileLinked =
+            persistedPatient?.accountActivated == true &&
             persistedPatient?.firebaseUid == firebaseUser.uid &&
             persistedProfile?.role == AccountRole.patient &&
             persistedProfile?.email.trim().toLowerCase() == normalizedEmail &&
@@ -399,14 +597,18 @@ class FirebaseAuthRepository implements AuthRepository {
         if (!profileLinked) rethrow;
       }
 
-      final activatedPatient = await _firestorePatientRepository.fetchPatientById(
-        patientRecord.id,
-        organizationId: patientRecord.organizationId,
-      );
+      final activatedPatient = await _firestorePatientRepository
+          .fetchPatientById(
+            patientRecord.id,
+            organizationId: patientRecord.organizationId,
+          );
       if (activatedPatient == null ||
           activatedPatient.firebaseUid != firebaseUser.uid ||
           !activatedPatient.accountActivated) {
-        return const AuthResult(success: false, message: 'تعذر التحقق من ربط سجل المريض بعد التفعيل.');
+        return const AuthResult(
+          success: false,
+          message: 'تعذر التحقق من ربط سجل المريض بعد التفعيل.',
+        );
       }
 
       _session = AuthSession(
@@ -417,21 +619,27 @@ class FirebaseAuthRepository implements AuthRepository {
         doctorId: activatedPatient.doctorId,
         patientId: activatedPatient.id,
       );
-      return AuthResult(success: true, message: 'تم تفعيل حساب المريض بنجاح.', session: _session);
+      return AuthResult(
+        success: true,
+        message: 'تم تفعيل حساب المريض بنجاح.',
+        session: _session,
+      );
     } catch (error) {
       if (!profileLinked &&
           !commitOutcomeUnknown &&
           createdAuthAccount &&
           firebaseUser != null) {
+        try {
+          await firebaseUser.delete();
+        } catch (_) {
           try {
-            await firebaseUser.delete();
-          } catch (_) {
-            try {
-              await _firebaseAuth.signOut();
-            } catch (_) {}
+            await _firebaseAuth.signOut();
+          } catch (_) {}
+        }
       }
       final message = switch (error) {
-        FirebaseAuthException exception => exception.message ?? _mapFirebaseAuthError(exception),
+        FirebaseAuthException exception =>
+          exception.message ?? _mapFirebaseAuthError(exception),
         StateError stateError => stateError.message,
         _ => error.toString(),
       };

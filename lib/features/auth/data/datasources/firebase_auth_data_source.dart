@@ -1125,7 +1125,7 @@ class FirebaseAuthDataSource {
             try {
               await _firebaseAuth.signOut();
             } catch (_) {}
-      }
+      }}
 
       final message = switch (error) {
         FirebaseAuthException exception =>
