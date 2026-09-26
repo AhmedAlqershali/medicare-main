@@ -276,6 +276,9 @@ class FirestorePatientRepository implements PatientRepository {
       'email',
       isEqualTo: normalizedEmail,
     )
+        .where('status', isEqualTo: AccountStatus.pending.name)
+        .where('accountActivated', isEqualTo: false)
+        .where('firebaseUid', isEqualTo: null)
         .get();
 
     Patient? pendingPatient;
@@ -285,12 +288,22 @@ class FirestorePatientRepository implements PatientRepository {
 
       final accountActivated =
           data['accountActivated'] == true;
+      final status = data['status']?.toString();
 
       final firebaseUid =
       data['firebaseUid']?.toString();
 
-      if (!accountActivated &&
+      if (status == AccountStatus.pending.name &&
+          !accountActivated &&
           (firebaseUid == null || firebaseUid.isEmpty)) {
+        final organizationId = document.reference.parent.parent?.id;
+        if (organizationId == null ||
+            data['organizationId'] != organizationId ||
+            data['doctorId'] is! String ||
+            (data['doctorId'] as String).isEmpty ||
+            data['id'] != document.id) {
+          throw StateError('بيانات سجل المريض غير مكتملة أو غير متطابقة.');
+        }
         if (pendingPatient != null) {
           throw StateError(
             'يوجد أكثر من سجل مريض بنفس البريد الإلكتروني. '
@@ -367,6 +380,7 @@ class FirestorePatientRepository implements PatientRepository {
     required String organizationId,
     required String firebaseUid,
     required String email,
+    WriteBatch? batch,
   }) async {
     final patient = await fetchPatientById(
       patientId,
@@ -386,8 +400,20 @@ class FirestorePatientRepository implements PatientRepository {
       );
     }
 
-    if (patient.firebaseUid != null &&
-        patient.firebaseUid != firebaseUid) {
+    if (patient.accountActivated) {
+      if (patient.firebaseUid != firebaseUid) {
+        throw StateError(
+          'هذا المريض مرتبط بالفعل بحساب Firebase مختلف ولا يمكن نقله.',
+        );
+      }
+      return;
+    }
+
+    if (patient.status != AccountStatus.pending) {
+      throw StateError('سجل المريض ليس في حالة انتظار التفعيل.');
+    }
+
+    if (patient.firebaseUid != null) {
       throw StateError(
         'هذا الحساب مربوط بالفعل بمستخدم Firebase آخر ولا يمكن نقله.',
       );
@@ -413,7 +439,7 @@ class FirestorePatientRepository implements PatientRepository {
       updatedAt: now,
     );
 
-    final batch = FirebaseFirestore.instance.batch();
+    final activationBatch = batch ?? FirebaseFirestore.instance.batch();
 
     final patientReference = _service
         .patientDocumentForOrganization(
@@ -421,7 +447,7 @@ class FirestorePatientRepository implements PatientRepository {
       updatedPatient.id,
     );
 
-    batch.set(
+    activationBatch.set(
       patientReference,
       updatedPatient.toMap(),
       SetOptions(merge: true),
@@ -438,19 +464,24 @@ class FirestorePatientRepository implements PatientRepository {
         .get();
 
     for (final document in appointmentsSnapshot.docs) {
-      batch.set(
-        document.reference,
-        {
-          'patientUid': firebaseUid,
-          'patientName': updatedPatient.name,
-          'patientInitials': updatedPatient.initials,
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      final appointmentUid = document.data()['patientUid'];
+      if (appointmentUid == null) {
+        activationBatch.set(
+          document.reference,
+          {
+            'patientUid': firebaseUid,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      } else if (appointmentUid != firebaseUid) {
+        throw StateError(
+          'موعد المريض مرتبط بالفعل بحساب Firebase مختلف.',
+        );
+      }
     }
 
-    await batch.commit();
+    if (batch == null) await activationBatch.commit();
   }
 
   String _formatDate(DateTime date) {

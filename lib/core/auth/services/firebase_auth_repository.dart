@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/account_role.dart';
@@ -83,6 +84,26 @@ class FirebaseAuthRepository implements AuthRepository {
         }
       }
       throw FirebaseAuthException(code: exception.code, message: _mapFirebaseAuthError(exception));
+    }
+  }
+
+  Future<({User? user, bool created})> _createPatientFirebaseAccount({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final credential = await _firebaseAuth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      return (user: credential.user, created: true);
+    } on FirebaseAuthException catch (exception) {
+      if (exception.code != 'email-already-in-use') rethrow;
+      final credential = await _firebaseAuth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      return (user: credential.user, created: false);
     }
   }
 
@@ -298,51 +319,123 @@ class FirebaseAuthRepository implements AuthRepository {
 
   @override
   Future<AuthResult> activatePatientAccount({required String email, required String password}) async {
-    final normalizedEmail = email.trim();
+    final normalizedEmail = email.trim().toLowerCase();
     if (normalizedEmail.isEmpty) return const AuthResult(success: false, message: 'أدخل البريد الإلكتروني الخاص بالمريض.');
     if (password.length < 6) return const AuthResult(success: false, message: 'استخدم ٦ أحرف أو أكثر لكلمة المرور.');
 
+    Patient? patientRecord;
+    User? firebaseUser;
+    var createdAuthAccount = false;
+    var profileLinked = false;
+    var commitOutcomeUnknown = false;
+
     try {
-      final userCredential = await _createFirebaseAccountIfNeeded(email: normalizedEmail, password: password);
-      if (userCredential == null) {
-        return const AuthResult(success: false, message: 'تعذر إنشاء حساب المريض في Firebase.');
-      }
-        final profile = await _firestoreUserProfileRepository.fetchUserProfile(userCredential.uid);
-        final patientRecord = profile?.patientId != null && profile?.organizationId != null
-          ? await _firestorePatientRepository.fetchPatientById(profile!.patientId!, organizationId: profile.organizationId)
-          : null;
+      patientRecord = await _firestorePatientRepository.fetchPendingPatientByEmail(normalizedEmail);
       if (patientRecord == null) {
-        return const AuthResult(success: false, message: 'لا يوجد سجل مريض مطابق لهذا البريد الإلكتروني. استخدم نفس البريد الذي أضافه الطبيب.');
+        return const AuthResult(success: false, message: 'لا يوجد سجل مريض معلّق بهذا البريد الإلكتروني.');
       }
-      if (patientRecord.accountActivated) {
-        return const AuthResult(success: false, message: 'هذا الحساب مفعّل بالفعل. استخدم تسجيل الدخول العادي.');
+      if (patientRecord.email.trim().toLowerCase() != normalizedEmail ||
+          patientRecord.id.isEmpty ||
+          patientRecord.organizationId.isEmpty ||
+          patientRecord.doctorId.isEmpty ||
+          patientRecord.accountActivated ||
+          patientRecord.firebaseUid != null) {
+        return const AuthResult(success: false, message: 'بيانات سجل المريض غير صالحة للتفعيل.');
       }
 
-      if (patientRecord.firebaseUid != null && patientRecord.firebaseUid != userCredential.uid) {
-        return const AuthResult(success: false, message: 'هذا المريض مرتبط بالفعل بحساب مستخدم آخر ولا يمكن استخدامه هنا.');
+      final account = await _createPatientFirebaseAccount(
+        email: normalizedEmail,
+        password: password,
+      );
+      firebaseUser = account.user;
+      createdAuthAccount = account.created;
+      if (firebaseUser == null) {
+        return const AuthResult(success: false, message: 'تعذر إنشاء حساب المريض في Firebase.');
       }
-      await _firestorePatientRepository.activatePatient(patientId: patientRecord.id, organizationId: patientRecord.organizationId, firebaseUid: userCredential.uid, email: normalizedEmail);
+      final profile = await _firestoreUserProfileRepository.fetchUserProfile(firebaseUser.uid);
+      if (profile != null &&
+          (profile.email.trim().toLowerCase() != normalizedEmail ||
+            profile.role != AccountRole.patient ||
+              (profile.patientId != null && profile.patientId != patientRecord.id) ||
+              (profile.organizationId != null && profile.organizationId != patientRecord.organizationId) ||
+              (profile.doctorId != null && profile.doctorId != patientRecord.doctorId))) {
+        throw StateError('حساب Firebase مرتبط بسجل مريض أو دور مختلف.');
+      }
+
+      final activationBatch = FirebaseFirestore.instance.batch();
+      await _firestorePatientRepository.activatePatient(
+        patientId: patientRecord.id,
+        organizationId: patientRecord.organizationId,
+        firebaseUid: firebaseUser.uid,
+        email: normalizedEmail,
+        batch: activationBatch,
+      );
       await _firestoreUserProfileRepository.linkPatientProfile(
-        uid: userCredential.uid,
+        uid: firebaseUser.uid,
         email: normalizedEmail,
         patientId: patientRecord.id,
         doctorId: patientRecord.doctorId,
         organizationId: patientRecord.organizationId,
+        batch: activationBatch,
       );
+      try {
+        await activationBatch.commit();
+        profileLinked = true;
+      } catch (_) {
+        commitOutcomeUnknown = true;
+        final persistedPatient = await _firestorePatientRepository.fetchPatientById(
+          patientRecord.id,
+          organizationId: patientRecord.organizationId,
+        );
+        final persistedProfile = await _firestoreUserProfileRepository.fetchUserProfile(firebaseUser.uid);
+        profileLinked = persistedPatient?.accountActivated == true &&
+            persistedPatient?.firebaseUid == firebaseUser.uid &&
+            persistedProfile?.role == AccountRole.patient &&
+            persistedProfile?.email.trim().toLowerCase() == normalizedEmail &&
+            persistedProfile?.patientId == patientRecord.id &&
+            persistedProfile?.doctorId == patientRecord.doctorId &&
+            persistedProfile?.organizationId == patientRecord.organizationId;
+        commitOutcomeUnknown = false;
+        if (!profileLinked) rethrow;
+      }
+
+      final activatedPatient = await _firestorePatientRepository.fetchPatientById(
+        patientRecord.id,
+        organizationId: patientRecord.organizationId,
+      );
+      if (activatedPatient == null ||
+          activatedPatient.firebaseUid != firebaseUser.uid ||
+          !activatedPatient.accountActivated) {
+        return const AuthResult(success: false, message: 'تعذر التحقق من ربط سجل المريض بعد التفعيل.');
+      }
 
       _session = AuthSession(
         isAuthenticated: true,
-        currentUser: _authUserForPatient(patientRecord, userCredential.uid),
+        currentUser: _authUserForPatient(activatedPatient, firebaseUser.uid),
         currentRole: AccountRole.patient,
-        organizationId: patientRecord.organizationId,
-        doctorId: patientRecord.doctorId,
-        patientId: patientRecord.id,
+        organizationId: activatedPatient.organizationId,
+        doctorId: activatedPatient.doctorId,
+        patientId: activatedPatient.id,
       );
       return AuthResult(success: true, message: 'تم تفعيل حساب المريض بنجاح.', session: _session);
-    } on FirebaseAuthException catch (exception) {
-      return AuthResult(success: false, message: exception.message ?? _mapFirebaseAuthError(exception));
-    } on StateError catch (error) {
-      return AuthResult(success: false, message: error.message);
+    } catch (error) {
+      if (!profileLinked &&
+          !commitOutcomeUnknown &&
+          createdAuthAccount &&
+          firebaseUser != null) {
+          try {
+            await firebaseUser.delete();
+          } catch (_) {
+            try {
+              await _firebaseAuth.signOut();
+            } catch (_) {}
+      }
+      final message = switch (error) {
+        FirebaseAuthException exception => exception.message ?? _mapFirebaseAuthError(exception),
+        StateError stateError => stateError.message,
+        _ => error.toString(),
+      };
+      return AuthResult(success: false, message: message);
     }
   }
 

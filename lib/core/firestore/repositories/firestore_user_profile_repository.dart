@@ -65,8 +65,9 @@ class FirestoreUserProfileRepository {
     required String patientId,
     required String doctorId,
     required String organizationId,
+    WriteBatch? batch,
   }) async {
-    await _service.userDocument(uid).set({
+    final profile = {
       'uid': uid,
       'email': email.trim().toLowerCase(),
       'patientId': patientId,
@@ -74,7 +75,13 @@ class FirestoreUserProfileRepository {
       'organizationId': organizationId,
       'role': AccountRole.patient.name,
       'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    };
+    final reference = _service.userDocument(uid);
+    if (batch == null) {
+      await reference.set(profile, SetOptions(merge: true));
+    } else {
+      batch.set(reference, profile, SetOptions(merge: true));
+    }
   }
 
   Future<void> linkDoctorProfile({

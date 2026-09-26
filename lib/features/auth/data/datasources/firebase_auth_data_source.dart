@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../../../core/auth/models/account_role.dart';
@@ -252,6 +253,27 @@ class FirebaseAuthDataSource {
         code: exception.code,
         message: _mapFirebaseAuthError(exception),
       );
+    }
+  }
+
+  Future<({User? user, bool created})> _createPatientFirebaseAccount({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final credential = await _firebaseAuth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      return (user: credential.user, created: true);
+    } on FirebaseAuthException catch (exception) {
+      if (exception.code != 'email-already-in-use') rethrow;
+
+      final credential = await _firebaseAuth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      return (user: credential.user, created: false);
     }
   }
 
@@ -979,229 +1001,144 @@ class FirebaseAuthDataSource {
       );
     }
 
+    User? firebaseUser;
+    Patient? patientRecord;
+    var createdAuthAccount = false;
+    var profileLinked = false;
+    var commitOutcomeUnknown = false;
+
     try {
-      /*
-       * 1. إنشاء حساب Firebase أو الدخول للحساب
-       *    إذا كان موجودًا بالفعل.
-       */
-      final firebaseUser =
-      await createFirebaseAccountIfNeeded(
+      patientRecord = await _patientRepository.fetchPendingPatientByEmail(
+        normalizedEmail,
+      );
+      if (patientRecord == null) {
+        throw StateError('لا يوجد سجل مريض معلّق بهذا البريد الإلكتروني.');
+      }
+      if (patientRecord.email.trim().toLowerCase() != normalizedEmail) {
+        throw StateError('البريد الإلكتروني غير مطابق لسجل المريض.');
+      }
+      if (patientRecord.id.isEmpty ||
+          patientRecord.organizationId.isEmpty ||
+          patientRecord.doctorId.isEmpty ||
+          patientRecord.accountActivated ||
+          patientRecord.firebaseUid != null) {
+        throw StateError('بيانات سجل المريض غير صالحة للتفعيل.');
+      }
+
+      final account = await _createPatientFirebaseAccount(
         email: normalizedEmail,
         password: password,
       );
-
+      firebaseUser = account.user;
+      createdAuthAccount = account.created;
       if (firebaseUser == null) {
-        return (
-        success: false,
-        message:
-        'تعذر إنشاء حساب المريض في Firebase.',
-        user: null,
-        currentRole: null,
-        );
+        throw StateError('تعذر إنشاء حساب المريض في Firebase.');
       }
 
-      /*
-       * 2. الحصول على المستخدم الحالي بعد الإنشاء/الدخول.
-       */
       await firebaseUser.reload();
-
-      final currentFirebaseUser =
-          _firebaseAuth.currentUser;
-
-      if (currentFirebaseUser == null) {
-        return (
-        success: false,
-        message:
-        'تعذر الوصول إلى حساب Firebase الحالي.',
-        user: null,
-        currentRole: null,
-        );
+      firebaseUser = _firebaseAuth.currentUser;
+      if (firebaseUser == null ||
+          firebaseUser.email?.trim().toLowerCase() != normalizedEmail) {
+        throw StateError('تعذر التحقق من حساب Firebase المطابق للبريد.');
       }
 
-      /*
-       * 3. معرفة هل users/{uid} موجود مسبقًا.
-       */
-      final existingProfile =
-      await _userProfileRepository.fetchUserProfile(
-        currentFirebaseUser.uid,
+      final existingProfile = await _userProfileRepository.fetchUserProfile(
+        firebaseUser.uid,
       );
-
-      /*
-       * 4. منع استخدام حساب له دور مختلف.
-       */
       if (existingProfile != null &&
-          existingProfile.role != AccountRole.patient) {
-        return (
-        success: false,
-        message:
-        'هذا البريد مرتبط بحساب من دور مختلف ولا يمكن استخدامه كمريض.',
-        user: null,
-        currentRole: null,
-        );
+          (existingProfile.email.trim().toLowerCase() != normalizedEmail ||
+              existingProfile.role != AccountRole.patient ||
+              (existingProfile.patientId != null &&
+                  existingProfile.patientId != patientRecord.id) ||
+              (existingProfile.organizationId != null &&
+                  existingProfile.organizationId !=
+                      patientRecord.organizationId) ||
+              (existingProfile.doctorId != null &&
+                  existingProfile.doctorId != patientRecord.doctorId))) {
+        throw StateError('حساب Firebase مرتبط بسجل مريض أو دور مختلف.');
       }
 
-      Patient? patientRecord;
-
-      /*
-       * 5. إذا كان الحساب مربوطًا بمريض مسبقًا،
-       *    نستخدم الربط الموجود.
-       */
-      if (existingProfile != null &&
-          existingProfile.role == AccountRole.patient &&
-          existingProfile.patientId != null &&
-          existingProfile.organizationId != null) {
-        patientRecord =
-        await _patientRepository.fetchPatientById(
-          existingProfile.patientId!,
-          organizationId:
-          existingProfile.organizationId,
-        );
-      }
-
-      /*
-       * 6. أول تفعيل:
-       *    لا يوجد users/{uid}، لذلك نبحث عن
-       *    سجل patient pending باستخدام البريد.
-       */
-      patientRecord ??=
-      await _patientRepository.fetchPendingPatientByEmail(
-        normalizedEmail,
-      );
-
-      /*
-       * 7. لم يتم العثور على سجل المريض.
-       */
-      if (patientRecord == null) {
-        return (
-        success: false,
-        message:
-        'لا يوجد سجل مريض معلّق بهذا البريد الإلكتروني.',
-        user: null,
-        currentRole: null,
-        );
-      }
-
-      /*
-       * 8. حماية من اختلاف البريد.
-       */
-      if (patientRecord.email.trim().toLowerCase() !=
-          normalizedEmail) {
-        return (
-        success: false,
-        message:
-        'البريد الإلكتروني غير مطابق لسجل المريض.',
-        user: null,
-        currentRole: null,
-        );
-      }
-
-      /*
-       * 9. إذا كان المريض مفعّلًا بالفعل.
-       */
-      if (patientRecord.accountActivated) {
-        return (
-        success: false,
-        message:
-        'هذا الحساب مفعّل بالفعل. استخدم تسجيل الدخول العادي.',
-        user: null,
-        currentRole: null,
-        );
-      }
-
-      /*
-       * 10. منع نقل سجل المريض لحساب Firebase آخر.
-       */
-      if (patientRecord.firebaseUid != null &&
-          patientRecord.firebaseUid!.isNotEmpty &&
-          patientRecord.firebaseUid !=
-              currentFirebaseUser.uid) {
-        return (
-        success: false,
-        message:
-        'هذا المريض مرتبط بالفعل بحساب Firebase مختلف ولا يمكن نقله.',
-        user: null,
-        currentRole: null,
-        );
-      }
-
-      /*
-       * 11. تفعيل سجل المريض وربط المواعيد.
-       */
+      final activationBatch = FirebaseFirestore.instance.batch();
       await _patientRepository.activatePatient(
         patientId: patientRecord.id,
         organizationId: patientRecord.organizationId,
-        firebaseUid: currentFirebaseUser.uid,
+        firebaseUid: firebaseUser.uid,
         email: normalizedEmail,
+        batch: activationBatch,
       );
-
-      /*
-       * 12. إنشاء users/{uid}.
-       */
       await _userProfileRepository.linkPatientProfile(
-        uid: currentFirebaseUser.uid,
+        uid: firebaseUser.uid,
         email: normalizedEmail,
         patientId: patientRecord.id,
         doctorId: patientRecord.doctorId,
         organizationId: patientRecord.organizationId,
+        batch: activationBatch,
       );
+      try {
+        await activationBatch.commit();
+        profileLinked = true;
+      } catch (_) {
+        commitOutcomeUnknown = true;
+        final persistedPatient = await _patientRepository.fetchPatientById(
+          patientRecord.id,
+          organizationId: patientRecord.organizationId,
+        );
+        final persistedProfile =
+            await _userProfileRepository.fetchUserProfile(firebaseUser.uid);
+        profileLinked = persistedPatient?.accountActivated == true &&
+            persistedPatient?.firebaseUid == firebaseUser.uid &&
+            persistedProfile?.role == AccountRole.patient &&
+            persistedProfile?.email.trim().toLowerCase() == normalizedEmail &&
+            persistedProfile?.patientId == patientRecord.id &&
+            persistedProfile?.doctorId == patientRecord.doctorId &&
+            persistedProfile?.organizationId == patientRecord.organizationId;
+        commitOutcomeUnknown = false;
+        if (!profileLinked) rethrow;
+      }
 
-      /*
-       * 13. إعادة قراءة المريض بعد التفعيل.
-       */
-      final activatedPatient =
-      await _patientRepository.fetchPatientById(
+      final activatedPatient = await _patientRepository.fetchPatientById(
         patientRecord.id,
         organizationId: patientRecord.organizationId,
       );
-
-      if (activatedPatient == null) {
-        throw StateError(
-          'تم تفعيل الحساب لكن تعذر تحميل سجل المريض بعد التفعيل.',
-        );
+      if (activatedPatient == null ||
+          activatedPatient.firebaseUid != firebaseUser.uid ||
+          !activatedPatient.accountActivated) {
+        throw StateError('تعذر التحقق من ربط سجل المريض بعد التفعيل.');
       }
 
-      /*
-       * 14. بناء المستخدم.
-       */
-      final user = _authUserForPatient(
-        activatedPatient,
-        currentFirebaseUser.uid,
+      final user = _authUserForPatient(activatedPatient, firebaseUser.uid);
+      _session = await _buildSession(firebaseUser);
+      return (
+        success: true,
+        message: 'تم تفعيل حساب المريض بنجاح.',
+        user: user,
+        currentRole: AccountRole.patient,
       );
+    } catch (error) {
+      if (!profileLinked &&
+          !commitOutcomeUnknown &&
+          createdAuthAccount &&
+          firebaseUser != null) {
+          try {
+            await firebaseUser.delete();
+          } catch (_) {
+            try {
+              await _firebaseAuth.signOut();
+            } catch (_) {}
+      }
 
-      /*
-       * 15. بناء الجلسة النهائية.
-       */
-      _session =
-      await _buildSession(currentFirebaseUser);
-
+      final message = switch (error) {
+        FirebaseAuthException exception =>
+          exception.message ?? _mapFirebaseAuthError(exception),
+        StateError stateError => stateError.message,
+        FormatException formatException => formatException.message,
+        _ => error.toString(),
+      };
       return (
-      success: true,
-      message: 'تم تفعيل حساب المريض بنجاح.',
-      user: user,
-      currentRole: AccountRole.patient,
-      );
-    } on FirebaseAuthException catch (exception) {
-      return (
-      success: false,
-      message:
-      exception.message ??
-          _mapFirebaseAuthError(exception),
-      user: null,
-      currentRole: null,
-      );
-    } on StateError catch (error) {
-      return (
-      success: false,
-      message: error.message,
-      user: null,
-      currentRole: null,
-      );
-    } on FormatException catch (error) {
-      return (
-      success: false,
-      message: error.message,
-      user: null,
-      currentRole: null,
+        success: false,
+        message: message,
+        user: null,
+        currentRole: null,
       );
     }
   }
