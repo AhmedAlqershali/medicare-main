@@ -15,6 +15,8 @@ class Doctor {
     this.clinic = '',
     this.clinicId,
     this.phone = '',
+    this.birthDate = '',
+    this.gender = '',
     this.location = '',
     this.rating = 0,
     this.reviews = 0,
@@ -33,17 +35,25 @@ class Doctor {
   final String specialty;
   final AccountStatus status;
   final String initials;
+
   final Map<String, List<String>> availability;
+
   final String clinic;
   final String? clinicId;
+
   final String phone;
+  final String birthDate;
+  final String gender;
+
   final String location;
   final double rating;
   final int reviews;
   final String experience;
   final String bio;
   final List<String> services;
+
   final String? firebaseUid;
+
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -60,6 +70,8 @@ class Doctor {
       'clinic': clinic,
       'clinicId': clinicId,
       'phone': phone,
+      'birthDate': birthDate,
+      'gender': gender,
       'location': location,
       'rating': rating,
       'reviews': reviews,
@@ -67,13 +79,22 @@ class Doctor {
       'bio': bio,
       'services': services,
     };
+
     map['firebaseUid'] = firebaseUid;
-    if (createdAt != null) map['createdAt'] = createdAt!.toUtc().toIso8601String();
-    if (updatedAt != null) map['updatedAt'] = updatedAt!.toUtc().toIso8601String();
+
+    if (createdAt != null) {
+      map['createdAt'] = createdAt!.toUtc().toIso8601String();
+    }
+
+    if (updatedAt != null) {
+      map['updatedAt'] = updatedAt!.toUtc().toIso8601String();
+    }
+
     return map;
   }
 
-  static Doctor fromMap(Map<String, dynamic> map, [String? documentId]) => Doctor(
+  static Doctor fromMap(Map<String, dynamic> map, [String? documentId]) =>
+      Doctor(
         id: documentId ?? map['id'] as String? ?? '',
         name: map['name'] as String? ?? '',
         email: map['email'] as String? ?? '',
@@ -85,25 +106,30 @@ class Doctor {
         clinic: map['clinic'] as String? ?? '',
         clinicId: map['clinicId'] as String?,
         phone: map['phone'] as String? ?? '',
+        birthDate: map['birthDate'] as String? ?? '',
+        gender: map['gender'] as String? ?? '',
         location: map['location'] as String? ?? '',
         rating: (map['rating'] as num?)?.toDouble() ?? 0,
         reviews: (map['reviews'] as num?)?.toInt() ?? 0,
         experience: map['experience'] as String? ?? '',
         bio: map['bio'] as String? ?? '',
-        services: map['services'] is List ? (map['services'] as List).map((item) => item.toString()).toList() : const [],
+        services: map['services'] is List
+            ? (map['services'] as List).map((item) => item.toString()).toList()
+            : const [],
         firebaseUid: map['firebaseUid'] as String?,
         createdAt: _dateFromMap(map['createdAt']),
         updatedAt: _dateFromMap(map['updatedAt']),
       );
 
   static DateTime? _dateFromMap(Object? value) => switch (value) {
-        String value => DateTime.tryParse(value),
-        Timestamp value => value.toDate(),
-        _ => null,
-      };
+    String value => DateTime.tryParse(value),
+    Timestamp value => value.toDate(),
+    _ => null,
+  };
 
   static AccountStatus _status(Object? value) {
     final normalized = value?.toString().trim().toLowerCase();
+
     return switch (normalized) {
       'active' || 'نشط' => AccountStatus.active,
       'inactive' || 'غير متاح' => AccountStatus.inactive,
@@ -113,10 +139,17 @@ class Doctor {
   }
 
   static Map<String, List<String>> _availability(Object? value) {
-    if (value is! Map) return const {};
-    return value.map((key, slots) => MapEntry(
-      key.toString(),
-      slots is List ? slots.map((slot) => slot.toString()).toList() : <String>[],
-    ));
+    if (value is! Map) {
+      return const {};
+    }
+
+    return value.map(
+      (key, slots) => MapEntry(
+        key.toString(),
+        slots is List
+            ? slots.map((slot) => slot.toString()).toList()
+            : <String>[],
+      ),
+    );
   }
 }

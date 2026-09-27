@@ -16,7 +16,10 @@ class FirestoreAppointmentRepository {
       String appointmentId,
       ) async {
     final snapshot = await _service
-        .appointmentDocument(organizationId, appointmentId)
+        .appointmentDocument(
+      organizationId,
+      appointmentId,
+    )
         .get();
 
     if (!snapshot.exists || snapshot.data() == null) {
@@ -70,6 +73,10 @@ class FirestoreAppointmentRepository {
     return fetchAppointments(organizationId);
   }
 
+  /// جلب مواعيد المريض.
+  ///
+  /// نعتمد على patientId بدل patientUid لأن المواعيد الحالية
+  /// قد يكون فيها patientUid = null.
   Future<List<Map<String, dynamic>>> fetchAppointmentsForPatient({
     required String organizationId,
     required String patientId,
@@ -96,6 +103,7 @@ class FirestoreAppointmentRepository {
         .toList();
   }
 
+  /// جلب مواعيد الطبيب.
   Future<List<Map<String, dynamic>>> fetchAppointmentsForDoctor({
     required String organizationId,
     required String doctorId,
@@ -207,19 +215,20 @@ class FirestoreAppointmentRepository {
   DocumentReference<Map<String, dynamic>> appointmentDocument(
       String organizationId,
       String appointmentId,
-      ) =>
-      _service.appointmentDocument(
-        organizationId,
-        appointmentId,
-      );
+      ) {
+    return _service.appointmentDocument(
+      organizationId,
+      appointmentId,
+    );
+  }
 
-  DocumentReference<Map<String, dynamic>>
-  appointmentDocumentForPaths(
+  DocumentReference<Map<String, dynamic>> appointmentDocumentForPaths(
       String organizationId,
       String appointmentId,
-      ) =>
-      _service.appointmentDocument(
-        organizationId,
-        appointmentId,
-      );
+      ) {
+    return _service.appointmentDocument(
+      organizationId,
+      appointmentId,
+    );
+  }
 }
