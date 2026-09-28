@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-
+import '../../core/firestore/repositories/firestore_clinic_repository.dart';
+import '../../core/firestore/repositories/firestore_organization_repository.dart';
 import '../../core/auth/auth_navigation.dart';
 import '../../core/auth/models/doctor.dart';
 import '../../core/auth/services/firebase_auth_repository.dart';

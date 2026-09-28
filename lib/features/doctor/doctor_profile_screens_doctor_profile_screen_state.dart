@@ -1,10 +1,12 @@
 part of 'doctor_profile_screens.dart';
 
-class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
+class _DoctorProfileScreenState
+extends State<DoctorProfileScreen> {
 var _profile = const DoctorProfile(
 name: '',
 specialty: '',
 clinic: '',
+organizationName: '',
 email: '',
 phone: '',
 birthDate: '',
@@ -21,9 +23,11 @@ _loadProfile();
 }
 
 Future<void> _loadProfile() async {
-final doctorId = FirebaseAuthRepository.instance.session.doctorId;
-final organizationId =
-FirebaseAuthRepository.instance.session.organizationId;
+final session =
+FirebaseAuthRepository.instance.session;
+
+final doctorId = session.doctorId;
+final organizationId = session.organizationId;
 
 if (doctorId == null ||
 doctorId.isEmpty ||
@@ -39,7 +43,8 @@ return;
 }
 
 try {
-final doctor = await FirestoreDoctorRepository.instance
+final doctor =
+await FirestoreDoctorRepository.instance
     .fetchDoctorByIdForOrganization(
 organizationId,
 doctorId,
@@ -55,6 +60,38 @@ _error = 'لم يتم العثور على ملف الطبيب.';
 return;
 }
 
+final organization =
+await FirestoreOrganizationRepository.instance
+    .fetchOrganizationById(
+organizationId,
+);
+
+String clinicName = doctor.clinic;
+
+final clinicId = doctor.clinicId;
+
+if (clinicId != null &&
+clinicId.trim().isNotEmpty) {
+final clinic =
+await FirestoreClinicRepository.instance
+    .fetchClinicById(
+organizationId,
+clinicId,
+);
+
+if (clinic != null) {
+final fetchedClinicName =
+clinic['name']?.toString().trim();
+
+if (fetchedClinicName != null &&
+fetchedClinicName.isNotEmpty) {
+clinicName = fetchedClinicName;
+}
+}
+}
+
+if (!mounted) return;
+
 setState(() {
 _isLoading = false;
 _error = null;
@@ -62,7 +99,9 @@ _error = null;
 _profile = DoctorProfile(
 name: doctor.name,
 specialty: doctor.specialty,
-clinic: doctor.clinic,
+clinic: clinicName,
+organizationName:
+organization?.name ?? '',
 email: doctor.email,
 phone: doctor.phone,
 birthDate: doctor.birthDate,
@@ -98,7 +137,8 @@ AppSpacing.lg,
 AppSpacing.xl,
 ),
 child: Column(
-crossAxisAlignment: CrossAxisAlignment.start,
+crossAxisAlignment:
+CrossAxisAlignment.start,
 children: [
 if (_error != null) ...[
 AppCard(
@@ -108,34 +148,44 @@ const Icon(
 Icons.error_outline,
 color: Color(0xFFC84C4C),
 ),
-const SizedBox(width: AppSpacing.sm),
+const SizedBox(
+width: AppSpacing.sm,
+),
 Expanded(
 child: Text(
 _error!,
 style: const TextStyle(
 color: Color(0xFFC84C4C),
-fontWeight: FontWeight.w700,
+fontWeight:
+FontWeight.w700,
 ),
 ),
 ),
 ],
 ),
 ),
-const SizedBox(height: AppSpacing.md),
+const SizedBox(
+height: AppSpacing.md,
+),
 ],
 
 AppCard(
 child: Row(
 children: [
 AppAvatar(
-initials: _initials(_profile.name),
+initials:
+_initials(_profile.name),
 size: 72,
-backgroundColor: AppColors.sky,
+backgroundColor:
+AppColors.sky,
 ),
-const SizedBox(width: AppSpacing.md),
+const SizedBox(
+width: AppSpacing.md,
+),
 Expanded(
 child: Column(
-crossAxisAlignment: CrossAxisAlignment.start,
+crossAxisAlignment:
+CrossAxisAlignment.start,
 children: [
 Text(
 _profile.name.isEmpty
@@ -146,10 +196,13 @@ style: Theme.of(context)
     .titleMedium
     ?.copyWith(
 fontSize: 18,
-fontWeight: FontWeight.w800,
+fontWeight:
+FontWeight.w800,
 ),
 ),
-const SizedBox(height: 4),
+const SizedBox(
+height: 4,
+),
 Text(
 _profile.specialty.isEmpty
 ? 'التخصص غير محدد'
@@ -158,52 +211,93 @@ style: Theme.of(context)
     .textTheme
     .bodyMedium
     ?.copyWith(
-color: AppColors.primaryDark,
-fontWeight: FontWeight.w700,
+color:
+AppColors.primaryDark,
+fontWeight:
+FontWeight.w700,
 ),
 ),
-const SizedBox(height: 3),
+const SizedBox(
+height: 3,
+),
 Text(
 _profile.clinic.isEmpty
 ? 'العيادة غير محددة'
     : _profile.clinic,
-style:
-Theme.of(context).textTheme.bodyMedium,
+style: Theme.of(context)
+    .textTheme
+    .bodyMedium,
 ),
 ],
 ),
 ),
 IconButton(
 onPressed: _editProfile,
-icon: const Icon(Icons.edit_outlined),
-tooltip: 'تعديل الملف الشخصي',
+icon: const Icon(
+Icons.edit_outlined,
+),
+tooltip:
+'تعديل الملف الشخصي',
 ),
 ],
 ),
 ),
 
-const SizedBox(height: AppSpacing.xl),
+const SizedBox(
+height: AppSpacing.xl,
+),
 
 const SectionHeader(
-title: 'المعلومات الشخصية',
+title: 'المعلومات المهنية',
 ),
-const SizedBox(height: AppSpacing.sm),
+
+const SizedBox(
+height: AppSpacing.sm,
+),
 
 _InfoTile(
 icon: Icons.badge_outlined,
 label: 'التخصص',
-value: _profile.specialty,
+value: _profile.specialty.isEmpty
+? 'غير محدد'
+    : _profile.specialty,
 ),
+
+_InfoTile(
+icon: Icons.business_outlined,
+label: 'المؤسسة',
+value:
+_profile.organizationName.isEmpty
+? 'غير محددة'
+    : _profile.organizationName,
+),
+
 _InfoTile(
 icon: Icons.local_hospital_outlined,
 label: 'العيادة',
-value: _profile.clinic,
+value: _profile.clinic.isEmpty
+? 'غير محددة'
+    : _profile.clinic,
 ),
+
+const SizedBox(
+height: AppSpacing.lg,
+),
+
+const SectionHeader(
+title: 'المعلومات الشخصية',
+),
+
+const SizedBox(
+height: AppSpacing.sm,
+),
+
 _InfoTile(
 icon: Icons.email_outlined,
 label: 'البريد الإلكتروني',
 value: _profile.email,
 ),
+
 _InfoTile(
 icon: Icons.phone_outlined,
 label: 'رقم الهاتف',
@@ -211,6 +305,7 @@ value: _profile.phone.isEmpty
 ? 'غير مضاف'
     : _profile.phone,
 ),
+
 _InfoTile(
 icon: Icons.cake_outlined,
 label: 'تاريخ الميلاد',
@@ -218,21 +313,29 @@ value: _profile.birthDate.isEmpty
 ? 'غير مضاف'
     : _profile.birthDate,
 ),
+
 _InfoTile(
 icon: Icons.person_outline,
 label: 'الجنس',
-value: _genderLabel(_profile.gender),
+value:
+_genderLabel(_profile.gender),
 ),
 
-const SizedBox(height: AppSpacing.lg),
+const SizedBox(
+height: AppSpacing.lg,
+),
 
 const SectionHeader(
 title: 'الإعدادات',
 ),
-const SizedBox(height: AppSpacing.sm),
+
+const SizedBox(
+height: AppSpacing.sm,
+),
 
 _SettingTile(
-icon: Icons.calendar_month_outlined,
+icon:
+Icons.calendar_month_outlined,
 title: 'جدول الطبيب',
 onTap: () {
 Navigator.of(context).push(
@@ -251,7 +354,8 @@ onTap: _editProfile,
 ),
 
 _SettingTile(
-icon: Icons.notifications_none_rounded,
+icon:
+Icons.notifications_none_rounded,
 title: 'الإشعارات',
 onTap: () => _showMessage(
 context,
@@ -269,7 +373,8 @@ context,
 ),
 
 _SettingTile(
-icon: Icons.support_agent_outlined,
+icon:
+Icons.support_agent_outlined,
 title: 'المساعدة',
 onTap: () => _showMessage(
 context,
@@ -290,7 +395,8 @@ _SettingTile(
 icon: Icons.logout_rounded,
 title: 'تسجيل الخروج',
 color: const Color(0xFFC84C4C),
-onTap: () => _showLogoutDialog(context),
+onTap: () =>
+_showLogoutDialog(context),
 ),
 ],
 ),
@@ -300,7 +406,8 @@ onTap: () => _showLogoutDialog(context),
 }
 
 Future<void> _editProfile() async {
-final updated = await Navigator.of(context).push<DoctorProfile>(
+final updated =
+await Navigator.of(context).push<DoctorProfile>(
 MaterialPageRoute(
 builder: (_) => DoctorEditProfileScreen(
 profile: _profile,
@@ -310,7 +417,9 @@ profile: _profile,
 
 if (updated == null || !mounted) return;
 
-final doctorId = FirebaseAuthRepository.instance.session.doctorId;
+final doctorId =
+FirebaseAuthRepository.instance.session.doctorId;
+
 final organizationId =
 FirebaseAuthRepository.instance.session.organizationId;
 
@@ -322,7 +431,8 @@ return;
 }
 
 try {
-await FirestoreDoctorRepository.instance.updateDoctorProfile(
+await FirestoreDoctorRepository.instance
+    .updateDoctorProfile(
 doctorId: doctorId,
 organizationId: organizationId,
 phone: updated.phone,
@@ -338,7 +448,8 @@ _profile = updated;
 
 ScaffoldMessenger.of(context).showSnackBar(
 const SnackBar(
-content: Text('تم تحديث الملف الشخصي بنجاح.'),
+content:
+Text('تم تحديث الملف الشخصي بنجاح.'),
 ),
 );
 } catch (error) {
@@ -404,13 +515,16 @@ content: const Text(
 ),
 actions: [
 TextButton(
-onPressed: () => Navigator.of(dialogContext).pop(),
+onPressed: () =>
+Navigator.of(dialogContext).pop(),
 child: const Text('إلغاء'),
 ),
 FilledButton(
 onPressed: () {
 Navigator.of(dialogContext).pop();
-AuthNavigation.openSignedOutFlow(context);
+AuthNavigation.openSignedOutFlow(
+context,
+);
 },
 child: const Text('تسجيل الخروج'),
 ),
