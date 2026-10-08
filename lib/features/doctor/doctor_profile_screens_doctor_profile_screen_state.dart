@@ -131,7 +131,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                           children: [
                             Text(_profile.name, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 18)),
                             const SizedBox(height: 4),
-                            Text(_profile.specialty, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.primaryDark, fontWeight: FontWeight.w700)),
+                            Text(displayDoctorSpecialty(context, _profile.specialty), style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.primaryDark, fontWeight: FontWeight.w700)),
                             const SizedBox(height: 3),
                             Text(_profile.clinic, style: Theme.of(context).textTheme.bodyMedium),
                           ],
@@ -144,7 +144,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                 const SizedBox(height: AppSpacing.xl),
                 const SectionHeader(title: 'معلومات التواصل'),
                 const SizedBox(height: AppSpacing.sm),
-                _InfoTile(icon: Icons.badge_outlined, label: 'التخصص', value: _profile.specialty),
+                _InfoTile(icon: Icons.badge_outlined, label: 'التخصص', value: displayDoctorSpecialty(context, _profile.specialty)),
                 _InfoTile(icon: Icons.local_hospital_outlined, label: 'العيادة', value: _profile.clinic),
                 _InfoTile(icon: Icons.email_outlined, label: 'البريد الإلكتروني', value: _profile.email),
                 _InfoTile(icon: Icons.phone_outlined, label: 'رقم الهاتف', value: _profile.phone),

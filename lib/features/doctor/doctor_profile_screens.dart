@@ -4,6 +4,7 @@ import '../../core/auth/auth_navigation.dart';
 import '../../core/auth/models/doctor.dart';
 import '../../core/auth/services/firebase_auth_repository.dart';
 import '../../core/firestore/firestore_service.dart';
+import '../../core/localization/doctor_specialty_display.dart';
 import '../../core/firestore/repositories/firestore_doctor_repository.dart';
 import '../../core/firestore/repositories/firestore_appointment_repository.dart';
 import '../../core/theme/app_theme.dart';

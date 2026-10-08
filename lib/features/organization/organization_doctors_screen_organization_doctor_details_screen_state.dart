@@ -18,7 +18,7 @@ class _OrganizationDoctorDetailsScreenState extends State<OrganizationDoctorDeta
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(_doctor.name, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 18)),
                     const SizedBox(height: 4),
-                    Text(_doctor.specialty, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.primaryDark, fontWeight: FontWeight.w700)),
+                    Text(displayDoctorSpecialty(context, _doctor.specialty), style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.primaryDark, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 6),
                     StatusBadge(label: _doctor.status, color: _doctor.status == 'نشط' ? AppColors.success : AppColors.muted),
                   ])),
