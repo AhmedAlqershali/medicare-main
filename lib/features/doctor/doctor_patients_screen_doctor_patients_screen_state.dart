@@ -23,7 +23,7 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
     }
     if (!mounted) return;
     setState(() {
-      _patients = patients.map((patient) => DoctorPatient(id: patient.id, organizationId: patient.organizationId, doctorId: patient.doctorId, clinicId: patient.clinicId, firebaseUid: patient.firebaseUid, name: patient.name, initials: patient.initials, age: _ageFromBirthDate(patient.birthDate), gender: patient.gender ?? '', birthDate: patient.birthDate ?? '', email: patient.email, phone: patient.phone ?? '', lastAppointment: '', status: patient.accountActivated ? 'نشط' : 'قيد التفعيل', avatarColor: Colors.transparent, notes: '')).toList();
+      _patients = patients.map((patient) => DoctorPatient(id: patient.id, organizationId: patient.organizationId, doctorId: patient.doctorId, clinicId: patient.clinicId, firebaseUid: patient.firebaseUid, name: patient.name, initials: patient.initials, age: _ageFromBirthDate(patient.birthDate), gender: patient.gender ?? '', birthDate: patient.birthDate ?? '', email: patient.email, phone: patient.phone ?? '', lastAppointment: '', status: patient.accountActivated ? 'نشط' : 'قيد التفعيل', avatarColor: Colors.transparent, notes: patient.notes)).toList();
     });
   }
 

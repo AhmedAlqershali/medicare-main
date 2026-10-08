@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import '../../../../core/auth/models/account_role.dart';
 import '../../../../core/auth/services/firebase_auth_repository.dart';
+import '../../../../core/services/firebase_messaging_service.dart';
 import '../../domain/entities/user_account.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../datasources/firebase_auth_data_source.dart';
@@ -39,7 +42,10 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<AuthResult> login({required AccountRole role, required String email, required String password}) async {
     final result = await _dataSource.login(role: role, email: email, password: password);
-    if (result.success) FirebaseAuthRepository.instance.adoptSession(_dataSource.session);
+    if (result.success) {
+      FirebaseAuthRepository.instance.adoptSession(_dataSource.session);
+      await FirebaseMessagingService.instance.initialize();
+    }
     return AuthResult(success: result.success, message: result.message, user: result.user);
   }
 
@@ -53,12 +59,21 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<AuthResult> activatePatientAccount({required String email, required String password}) async {
     final result = await _dataSource.activatePatientAccount(email: email, password: password);
-    if (result.success) FirebaseAuthRepository.instance.adoptSession(_dataSource.session);
+    if (result.success) {
+      FirebaseAuthRepository.instance.adoptSession(_dataSource.session);
+      await FirebaseMessagingService.instance.initialize();
+    }
     return AuthResult(success: result.success, message: result.message, user: result.user);
   }
 
   @override
-  void logout() {
+  Future<void> logout() async {
+    final uid = _dataSource.currentUser?.id;
+    if (uid != null) {
+      await FirebaseMessagingService.instance.removeCurrentTokenForUser(uid);
+    }
+
+    FirebaseMessagingService.instance.reset();
     _dataSource.logout();
     FirebaseAuthRepository.instance.logout();
   }

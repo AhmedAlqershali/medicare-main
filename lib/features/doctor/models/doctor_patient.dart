@@ -19,5 +19,5 @@ class DoctorPatient {
   final Color avatarColor;
   final String notes;
 
-  DoctorPatient copyWith({String? name, String? age, String? gender, String? birthDate, String? phone, String? lastAppointment}) => DoctorPatient(id: id, organizationId: organizationId, doctorId: doctorId, clinicId: clinicId, firebaseUid: firebaseUid, name: name ?? this.name, initials: initials, age: age ?? this.age, gender: gender ?? this.gender, birthDate: birthDate ?? this.birthDate, email: email, phone: phone ?? this.phone, lastAppointment: lastAppointment ?? this.lastAppointment, status: status, avatarColor: avatarColor, notes: notes);
+  DoctorPatient copyWith({String? name, String? age, String? gender, String? birthDate, String? phone, String? lastAppointment, String? notes}) => DoctorPatient(id: id, organizationId: organizationId, doctorId: doctorId, clinicId: clinicId, firebaseUid: firebaseUid, name: name ?? this.name, initials: initials, age: age ?? this.age, gender: gender ?? this.gender, birthDate: birthDate ?? this.birthDate, email: email, phone: phone ?? this.phone, lastAppointment: lastAppointment ?? this.lastAppointment, status: status, avatarColor: avatarColor, notes: notes ?? this.notes);
 }

@@ -261,6 +261,27 @@ service cloud.firestore {
       allow delete: if signedIn() && (ownsOrganization(organizationId) || isAdmin());
     }
 
+    match /organizations/{organizationId}/patients/{patientId}/medical_notes/{noteId} {
+      allow read: if signedIn() && (
+        ownsOrganization(organizationId) ||
+        isOrganizationMember(organizationId) ||
+        (currentUserProfile() != null &&
+          currentUserProfile().data.role == 'doctor' &&
+          isDoctorPatientAccess(organizationId, currentUserProfile().data.doctorId, patientId)) ||
+        isAdmin()
+      );
+
+      allow create: if signedIn() &&
+        currentUserProfile() != null &&
+        currentUserProfile().data.role == 'doctor' &&
+        isDoctorPatientAccess(organizationId, currentUserProfile().data.doctorId, patientId) &&
+        request.resource.data.doctorUid == request.auth.uid;
+
+      allow update: if false;
+
+      allow delete: if false;
+    }
+
     match /organizations/{organizationId}/clinics/{clinicId} {
       allow read: if isAdmin() || (signedIn() && (isOrganizationMember(organizationId) || organizationUserForClinic(organizationId, clinicId)));
 

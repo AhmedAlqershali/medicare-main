@@ -13,6 +13,8 @@ class _DoctorPatientDetailsScreenState extends State<DoctorPatientDetailsScreen>
   String _doctorName = '';
   String _clinicName = '';
   Map<String, List<String>> _availability = const {};
+  List<MedicalNote> _medicalNotes = const [];
+  bool _loadingNotes = true;
 
   @override
   void initState() {
@@ -26,14 +28,74 @@ class _DoctorPatientDetailsScreenState extends State<DoctorPatientDetailsScreen>
       final clinic = _patient.clinicId == null ? null : await FirestoreClinicRepository.instance.fetchClinicById(_patient.organizationId, _patient.clinicId!);
       final appointments = await FirestoreAppointmentRepository.instance.fetchAppointmentsForDoctor(organizationId: _patient.organizationId, doctorId: _patient.doctorId);
       final patientAppointments = appointments.where((appointment) => appointment['patientId'] == _patient.id).toList();
+      final medicalNotes = await FirestorePatientRepository.instance.getMedicalNotes(
+        patientId: _patient.id,
+        organizationId: _patient.organizationId,
+      );
       if (!mounted) return;
       setState(() {
         _doctorName = doctor?.name ?? '';
         _clinicName = clinic?['name'] as String? ?? '';
         _availability = doctor?.availability ?? const {};
+        _medicalNotes = medicalNotes;
+        _loadingNotes = false;
         _patient = _patient.copyWith(lastAppointment: patientAppointments.isEmpty ? '' : patientAppointments.last['date'] as String?);
       });
     } catch (_) {}
+  }
+
+  Future<void> _addMedicalNote() async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('إضافة ملاحظة طبية'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(labelText: 'الملاحظة'),
+            maxLines: 4,
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: controller.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.of(dialogContext).pop(controller.text.trim()),
+              child: const Text('حفظ الملاحظة'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result == null || !mounted) return;
+    try {
+      final session = FirebaseAuthRepository.instance.session;
+      final note = await FirestorePatientRepository.instance.addMedicalNote(
+        patientId: _patient.id,
+        organizationId: _patient.organizationId,
+        text: result,
+        doctorUid: session.currentUser?.id ?? '',
+        doctorName: session.currentUser?.name ?? '',
+      );
+      setState(() => _medicalNotes = [note, ..._medicalNotes]);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم حفظ الملاحظة الطبية.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString())),
+        );
+      }
+    }
   }
 
   Future<void> _scheduleNextVisit() async {
@@ -269,9 +331,44 @@ class _DoctorPatientDetailsScreenState extends State<DoctorPatientDetailsScreen>
                 else
                   AppCard(child: _HistoryRow(date: _patient.lastAppointment, title: 'موعد سابق', status: 'مكتمل')),
                 const SizedBox(height: AppSpacing.xl),
-                const SectionHeader(title: 'الملاحظات'),
+                const SectionHeader(title: 'الملاحظات طبية'),
                 const SizedBox(height: AppSpacing.sm),
-                AppCard(child: Text(_patient.notes.isEmpty ? 'غير متوفر' : _patient.notes, style: Theme.of(context).textTheme.bodyLarge)),
+                if (_loadingNotes)
+                  const Center(child: CircularProgressIndicator())
+                else if (_medicalNotes.isEmpty)
+                  const EmptyState(title: 'لا توجد ملاحظات', message: 'لا توجد ملاحظات طبية محفوظة لهذا المريض.', icon: Icons.sticky_note_2_outlined)
+                else
+                  for (final note in _medicalNotes) ...[
+                    AppCard(
+                      child: Padding(
+                        padding: const EdgeInsets.all(AppSpacing.md),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.event_outlined, size: 17),
+                                const SizedBox(width: AppSpacing.xs),
+                                Expanded(child: Text(
+                                  '${note.createdAt.day.toString().padLeft(2, '0')}/${note.createdAt.month.toString().padLeft(2, '0')}/${note.createdAt.year.toString()} ${note.createdAt.hour.toString().padLeft(2, '0')}:${note.createdAt.minute.toString().padLeft(2, '0')}',
+                                  style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700),
+                                )),
+                              ],
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            Text(note.text, style: Theme.of(context).textTheme.bodyLarge),
+                            if (note.doctorName?.isNotEmpty ?? false) ...[
+                              const SizedBox(height: AppSpacing.sm),
+                              Text('بواسطة ${note.doctorName}', style: Theme.of(context).textTheme.labelMedium?.copyWith(color: AppColors.muted)),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                  ],
+                const SizedBox(height: AppSpacing.sm),
+                SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: _addMedicalNote, icon: const Icon(Icons.add_outlined), label: const Text('إضافة ملاحظة طبية'))),
               ],
             ),
           ),

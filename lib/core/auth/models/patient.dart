@@ -15,6 +15,7 @@ class Patient {
     this.phone,
     this.birthDate,
     this.gender,
+    this.notes,
     this.createdAt,
     this.updatedAt,
   });
@@ -32,6 +33,7 @@ class Patient {
   final String? phone;
   final String? birthDate;
   final String? gender;
+  final String? notes;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -50,6 +52,7 @@ class Patient {
     if (phone != null) map['phone'] = phone;
     if (birthDate != null) map['birthDate'] = birthDate;
     if (gender != null) map['gender'] = gender;
+    if (notes != null) map['notes'] = notes;
     map['firebaseUid'] = firebaseUid;
     if (createdAt != null) map['createdAt'] = createdAt!.toUtc().toIso8601String();
     if (updatedAt != null) map['updatedAt'] = updatedAt!.toUtc().toIso8601String();
@@ -72,6 +75,7 @@ class Patient {
         phone: map['phone'] as String?,
         birthDate: map['birthDate'] as String?,
         gender: map['gender'] as String?,
+        notes: map['notes'] as String?,
         firebaseUid: map['firebaseUid'] as String?,
         createdAt: map['createdAt'] is String ? DateTime.tryParse(map['createdAt'] as String) : null,
         updatedAt: map['updatedAt'] is String ? DateTime.tryParse(map['updatedAt'] as String) : null,

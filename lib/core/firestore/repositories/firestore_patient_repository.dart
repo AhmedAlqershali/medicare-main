@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../auth/models/account_status.dart';
 import '../../auth/repositories/doctor_repository.dart';
 import '../../auth/models/patient.dart';
+import '../../auth/models/medical_note.dart';
 import '../../auth/repositories/patient_repository.dart';
 import '../../auth/services/firebase_auth_repository.dart';
 import '../firestore_service.dart';
@@ -331,6 +332,91 @@ class FirestorePatientRepository implements PatientRepository {
       patient.toMap(),
       SetOptions(merge: true),
     );
+  }
+
+  Future<MedicalNote> addMedicalNote({
+    required String patientId,
+    required String organizationId,
+    required String text,
+    required String doctorUid,
+    required String doctorName,
+  }) async {
+    final trimmedText = text.trim();
+    if (trimmedText.isEmpty) {
+      throw StateError('يجب إدخال نص الملاحظة الطبية.');
+    }
+    if (doctorUid.trim().isEmpty) {
+      throw StateError('يجب تحديد الطبيب الذي يضيف الملاحظة.');
+    }
+
+    final patient = await fetchPatientById(
+      patientId,
+      organizationId: organizationId,
+    );
+    if (patient == null) {
+      throw StateError('لم يتم العثور على سجل المريض المطلوب.');
+    }
+
+    final noteId = _service
+        .medicalNotesCollection(patient.organizationId, patient.id)
+        .doc()
+        .id;
+    final note = MedicalNote(
+      id: noteId,
+      text: trimmedText,
+      createdAt: DateTime.now(),
+      doctorUid: doctorUid.trim(),
+      doctorName: doctorName.trim(),
+    );
+
+    await _service
+        .medicalNotesCollection(patient.organizationId, patient.id)
+        .doc(noteId)
+        .set({
+      'text': note.text,
+      'createdAt': FieldValue.serverTimestamp(),
+      'doctorUid': note.doctorUid,
+      'doctorName': note.doctorName,
+    });
+
+    return note;
+  }
+
+  Future<List<MedicalNote>> getMedicalNotes({
+    required String patientId,
+    required String organizationId,
+  }) async {
+    final patient = await fetchPatientById(
+      patientId,
+      organizationId: organizationId,
+    );
+    if (patient == null) {
+      return const [];
+    }
+
+    final snapshot = await _service
+        .medicalNotesCollection(patient.organizationId, patient.id)
+        .orderBy('createdAt', descending: true)
+        .get();
+
+    final notes = snapshot.docs
+        .map((document) =>
+            MedicalNote.fromMap(document.id, document.data()))
+        .toList();
+
+    if (patient.notes?.trim().isNotEmpty ?? false) {
+      notes.add(
+        MedicalNote(
+          id: 'legacy-${patient.id}',
+          text: patient.notes!.trim(),
+          createdAt: patient.updatedAt ?? patient.createdAt ?? DateTime.now(),
+          doctorUid: patient.doctorId,
+          doctorName: null,
+        ),
+      );
+    }
+
+    return MedicalNote.sortNewestFirst(notes);
   }
 
   Future<void> updatePatientProfile({

@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'core/services/firebase_messaging_service.dart';
 import 'features/auth/medicare_entry_screen.dart';
 import 'features/auth/data/repositories/auth_repository_impl.dart';
 
@@ -9,6 +10,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   await AuthRepositoryImpl.instance.restoreSession();
+  await FirebaseMessagingService.instance.initialize();
   runApp(const MedicareApp());
 }
 
