@@ -1,13 +1,30 @@
 part of 'doctor_profile_screens.dart';
 
+class _ThemeOption extends StatelessWidget {
+  const _ThemeOption({required this.mode, required this.label});
+
+  final AppThemeMode mode;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(mode == AppThemeMode.dark ? Icons.dark_mode_outlined : mode == AppThemeMode.light ? Icons.light_mode_outlined : Icons.settings_system_daydream_outlined),
+        title: Text(label),
+        onTap: () => Navigator.of(context).pop(mode),
+      );
+}
+
 class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
   var _profile = const DoctorProfile(name: '', specialty: '', clinic: '', email: '', phone: '');
+  var _themeMode = AppThemeMode.system;
   String? _error;
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
+    _loadThemeMode();
   }
 
   Future<void> _loadProfile() async {
@@ -29,7 +46,70 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
       if (mounted) setState(() => _error = error.toString());
     }
   }
+  Future<void> _loadThemeMode() async {
+    final uid = FirebaseAuthRepository.instance.session.currentUser?.id;
+    if (uid == null) return;
 
+    try {
+      final snapshot = await FirestoreService().userDocument(uid).get();
+      if (mounted) {
+        setState(() => _themeMode = AppThemeMode.fromValue(snapshot.data()?['themeMode'] as String?));
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveThemeMode(AppThemeMode mode) async {
+    final uid = FirebaseAuthRepository.instance.session.currentUser?.id;
+    if (uid == null) return;
+
+    await FirestoreService().userDocument(uid).update({'themeMode': mode.value});
+  }
+
+  Future<void> _showThemePicker(BuildContext context) async {
+    final selected = await showDialog<AppThemeMode>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('المظهر'),
+          content: const SizedBox(
+            width: 280,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _ThemeOption(mode: AppThemeMode.light, label: 'فاتح'),
+                _ThemeOption(mode: AppThemeMode.dark, label: 'داكن'),
+                _ThemeOption(mode: AppThemeMode.system, label: 'النظام'),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('إلغاء')),
+          ],
+        ),
+      ),
+    );
+
+    if (selected == null) return;
+    await _saveThemeMode(selected);
+    AppThemeScope.of(context)?.value = selected;
+    if (mounted) setState(() => _themeMode = selected);
+  }
+
+  Future<void> _requestNotifications() async {
+    final status = await FirebaseMessaging.instance.requestPermission(
+      alert: true,
+      sound: true,
+      badge: true,
+      carPlay: true,
+      criticalAlert: true,
+      provisional: true,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(status == PermissionStatus.granted ? 'تم تفعيل الإشعارات.' : 'تم رفض إذن الإشعارات.'),
+      behavior: SnackBarBehavior.floating,
+    ));
+  }
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: const Text('الملف الشخصي')),
@@ -73,10 +153,10 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                 const SizedBox(height: AppSpacing.sm),
                 _SettingTile(icon: Icons.calendar_month_outlined, title: 'جدول الطبيب', onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const DoctorScheduleScreen()))),
                 _SettingTile(icon: Icons.edit_outlined, title: 'تعديل الملف الشخصي', onTap: _editProfile),
-                _SettingTile(icon: Icons.notifications_none_rounded, title: 'الإشعارات', onTap: () => _showMessage(context, 'لا توجد إشعارات جديدة.')),
-                _SettingTile(icon: Icons.brightness_6_outlined, title: 'المظهر', onTap: () => _showMessage(context, 'المظهر مضبوط على الوضع الفاتح')),
-                _SettingTile(icon: Icons.support_agent_outlined, title: 'المساعدة', onTap: () => _showMessage(context, 'يسعدنا مساعدتك')),
-                _SettingTile(icon: Icons.info_outline, title: 'عن Medicare', onTap: () => _showMessage(context, 'Medicare للرعاية الصحية')),
+                _SettingTile(icon: Icons.notifications_none_rounded, title: 'الإشعارات', onTap: _requestNotifications),
+                _SettingTile(icon: Icons.brightness_6_outlined, title: 'المظهر', onTap: () => _showThemePicker(context)),
+                _SettingTile(icon: Icons.support_agent_outlined, title: 'المساعدة', onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const DoctorHelpScreen()))),
+                _SettingTile(icon: Icons.info_outline, title: 'عن Medicare', onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const DoctorAboutScreen()))),
                 _SettingTile(icon: Icons.logout_rounded, title: 'تسجيل الخروج', color: const Color(0xFFC84C4C), onTap: () => _showLogoutDialog(context)),
               ],
             ),
