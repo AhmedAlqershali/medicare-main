@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../core/auth/auth_navigation.dart';
+import '../../core/settings/app_about_screen.dart';
+import '../../core/settings/app_help_screen.dart';
+import '../../core/settings/app_notification_settings_screen.dart';
+import '../../core/settings/app_theme_settings_screen.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/medicare_widgets.dart';
 import 'data/repositories/patient_profile_repository_impl.dart';
