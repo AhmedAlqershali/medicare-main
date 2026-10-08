@@ -309,6 +309,8 @@ class _DoctorPatientDetailsScreenState extends State<DoctorPatientDetailsScreen>
                       const Divider(height: AppSpacing.lg),
                       _InfoRow(label: 'الجنس', value: _patient.gender, icon: Icons.person_outline),
                       const Divider(height: AppSpacing.lg),
+                      _InfoRow(label: 'مكان المشكلة / Condition', value: _patient.notes.trim().isEmpty ? 'غير محدد' : _patient.notes.trim(), icon: Icons.sticky_note_2_outlined),
+                      const Divider(height: AppSpacing.lg),
                       _InfoRow(label: 'البريد الإلكتروني', value: _patient.email, icon: Icons.email_outlined),
                       const Divider(height: AppSpacing.lg),
                       _InfoRow(label: 'رقم الهاتف', value: _patient.phone, icon: Icons.phone_outlined),
