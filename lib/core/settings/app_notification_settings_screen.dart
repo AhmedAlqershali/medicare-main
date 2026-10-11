@@ -12,8 +12,12 @@ class AppNotificationSettingsScreen extends StatefulWidget {
 }
 
 class _AppNotificationSettingsScreenState extends State<AppNotificationSettingsScreen> {
-  PermissionStatus _permission = PermissionStatus.denied;
+  AuthorizationStatus _permission = AuthorizationStatus.denied;
   bool _requesting = false;
+
+  bool get _notificationsEnabled =>
+      _permission == AuthorizationStatus.authorized ||
+      _permission == AuthorizationStatus.provisional;
 
   @override
   void initState() {
@@ -22,7 +26,8 @@ class _AppNotificationSettingsScreenState extends State<AppNotificationSettingsS
   }
 
   Future<void> _loadPermission() async {
-    final status = await FirebaseMessaging.instance.checkPermission();
+    final settings = await FirebaseMessaging.instance.getNotificationSettings();
+    final status = settings.authorizationStatus;
     if (mounted) setState(() => _permission = status);
   }
 
@@ -39,7 +44,7 @@ class _AppNotificationSettingsScreenState extends State<AppNotificationSettingsS
     );
     if (mounted) {
       setState(() {
-        _permission = status;
+        _permission = status.authorizationStatus;
         _requesting = false;
       });
     }
@@ -79,11 +84,11 @@ class _AppNotificationSettingsScreenState extends State<AppNotificationSettingsS
                   padding: const EdgeInsets.all(AppSpacing.md),
                   child: Row(
                     children: [
-                      Icon(_permission == PermissionStatus.granted ? Icons.check_circle_outline : Icons.warning_amber_outlined, color: _permission == PermissionStatus.granted ? AppColors.success : AppColors.warning),
+                      Icon(_notificationsEnabled ? Icons.check_circle_outline : Icons.warning_amber_outlined, color: _notificationsEnabled ? AppColors.success : AppColors.warning),
                       const SizedBox(width: AppSpacing.md),
                       Expanded(
                         child: Text(
-                          _permission == PermissionStatus.granted ? 'الإشعارات مفعّلة.' : 'الإشعارات غير مفعّلة.',
+                          _notificationsEnabled ? 'الإشعارات مفعّلة.' : 'الإشعارات غير مفعّلة.',
                           style: Theme.of(context).textTheme.bodyLarge,
                         ),
                       ),
