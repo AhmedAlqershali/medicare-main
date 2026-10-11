@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 
 const Map<String, String> _arabicSpecialties = {
   'dermatology': 'الأمراض الجلدية',
@@ -35,7 +34,7 @@ const Map<String, String> _englishSpecialties = {
 
 String displayDoctorSpecialty(BuildContext context, String specialty) {
   final normalized = specialty.trim().toLowerCase();
-  final isArabic = Localizations.of(context).locale.languageCode == 'ar';
+  final isArabic = Localizations.localeOf(context).languageCode == 'ar';
   final mapping = isArabic ? _arabicSpecialties : _englishSpecialties;
   return mapping[normalized] ?? specialty.trim();
 }
