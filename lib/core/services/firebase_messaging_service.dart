@@ -53,13 +53,13 @@ class FirebaseMessagingService {
       criticalAlert: true,
       provisional: true,
     );
-    if (permission == PermissionStatus.denied) {
+    if (permission.authorizationStatus == AuthorizationStatus.denied) {
       debugPrint('[FCM] Notification permission was denied.');
     }
 
     _messageSubscription = _messaging.onMessage.listen(_handleForegroundMessage);
     _openedMessageSubscription =
-        _messaging.onMessageOpenedApp.listen(_openedMessageController.add);
+        FirebaseMessaging.onMessageOpenedApp.listen(_openedMessageController.add);
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
     _tokenRefreshSubscription = FirebaseMessaging.onTokenRefresh.listen((token) {
       unawaited(ensureTokenForUser(token));
@@ -92,7 +92,7 @@ class FirebaseMessagingService {
     if (uid == null || uid.isEmpty || token.isEmpty) return;
 
     await _firestoreService.userDocument(uid).update({
-      'fcmTokens': FieldValue.arrayUnion(token),
+      'fcmTokens': FieldValue.arrayUnion([token]),
     });
   }
 
@@ -103,7 +103,7 @@ class FirebaseMessagingService {
     if (token == null || token.isEmpty) return;
 
     await _firestoreService.userDocument(uid).update({
-      'fcmTokens': FieldValue.arrayRemove(token),
+      'fcmTokens': FieldValue.arrayRemove([token]),
     });
   }
 

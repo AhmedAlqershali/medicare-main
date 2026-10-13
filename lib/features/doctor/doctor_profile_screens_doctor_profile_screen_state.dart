@@ -91,7 +91,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
 
     if (selected == null) return;
     await _saveThemeMode(selected);
-    AppThemeScope.of(context)?.value = selected;
+    AppThemeScope.of(context)?.value = selected.materialMode;
     if (mounted) setState(() => _themeMode = selected);
   }
 
@@ -105,8 +105,12 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
       provisional: true,
     );
     if (!mounted) return;
+    final authorizationStatus = status.authorizationStatus;
+    final notificationsEnabled =
+        authorizationStatus == AuthorizationStatus.authorized ||
+            authorizationStatus == AuthorizationStatus.provisional;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(status == PermissionStatus.granted ? 'تم تفعيل الإشعارات.' : 'تم رفض إذن الإشعارات.'),
+      content: Text(notificationsEnabled ? 'تم تفعيل الإشعارات.' : 'تم رفض إذن الإشعارات.'),
       behavior: SnackBarBehavior.floating,
     ));
   }
