@@ -63,7 +63,7 @@ class FirebaseMessagingService {
         FirebaseMessaging.onMessageOpenedApp.listen(_openedMessageController.add);
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
     _tokenRefreshSubscription =
-        FirebaseMessaging.onTokenRefresh.listen((token) {
+        _messaging.onTokenRefresh.listen((token) {
       unawaited(ensureTokenForUser(token));
     });
 
