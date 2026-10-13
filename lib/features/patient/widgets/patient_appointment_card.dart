@@ -10,7 +10,9 @@ class PatientAppointmentCard extends StatelessWidget {
   final VoidCallback onView;
 
   @override
-  Widget build(BuildContext context) => AppCard(
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return AppCard(
         padding: EdgeInsets.zero,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Container(
@@ -36,13 +38,13 @@ class PatientAppointmentCard extends StatelessWidget {
               const SizedBox(height: AppSpacing.md),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 11),
-                decoration: BoxDecoration(color: AppColors.canvas, borderRadius: BorderRadius.circular(12)),
+                decoration: BoxDecoration(color: colors.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
                 child: Row(children: [
-                  const Icon(Icons.schedule_outlined, color: AppColors.primary, size: 18),
+                    Icon(Icons.schedule_outlined, color: colors.primary, size: 18),
                   const SizedBox(width: 7),
-                  Text(appointment.time, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.ink, fontWeight: FontWeight.w700)),
+                    Text(appointment.time, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colors.onSurface, fontWeight: FontWeight.w700)),
                   const Spacer(),
-                  const Icon(Icons.location_on_outlined, color: AppColors.primary, size: 18),
+                    Icon(Icons.location_on_outlined, color: colors.primary, size: 18),
                   const SizedBox(width: 5),
                   Flexible(child: Text(appointment.clinicName, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12))),
                 ]),
@@ -53,4 +55,5 @@ class PatientAppointmentCard extends StatelessWidget {
           ),
         ]),
       );
+  }
 }

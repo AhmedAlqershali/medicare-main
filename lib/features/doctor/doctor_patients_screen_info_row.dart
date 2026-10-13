@@ -7,5 +7,5 @@ class _InfoRow extends StatelessWidget {
   final IconData icon;
 
   @override
-  Widget build(BuildContext context) => Row(children: [Icon(icon, color: AppColors.primary, size: 20), const SizedBox(width: AppSpacing.sm), Text(label, style: Theme.of(context).textTheme.bodyMedium), const Spacer(), Text(value, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.ink, fontWeight: FontWeight.w700))]);
+  Widget build(BuildContext context) => Row(children: [Icon(icon, color: AppColors.primary, size: 20), const SizedBox(width: AppSpacing.sm), Text(label, style: Theme.of(context).textTheme.bodyMedium), const Spacer(), Text(value, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.w700))]);
 }

@@ -17,14 +17,12 @@ class _ThemeOption extends StatelessWidget {
 
 class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
   var _profile = const DoctorProfile(name: '', specialty: '', clinic: '', email: '', phone: '');
-  var _themeMode = AppThemeMode.system;
   String? _error;
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
-    _loadThemeMode();
   }
 
   Future<void> _loadProfile() async {
@@ -46,53 +44,40 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
       if (mounted) setState(() => _error = error.toString());
     }
   }
-  Future<void> _loadThemeMode() async {
-    final uid = FirebaseAuthRepository.instance.session.currentUser?.id;
-    if (uid == null) return;
-
-    try {
-      final snapshot = await FirestoreService().userDocument(uid).get();
-      if (mounted) {
-        setState(() => _themeMode = AppThemeMode.fromValue(snapshot.data()?['themeMode'] as String?));
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _saveThemeMode(AppThemeMode mode) async {
-    final uid = FirebaseAuthRepository.instance.session.currentUser?.id;
-    if (uid == null) return;
-
-    await FirestoreService().userDocument(uid).update({'themeMode': mode.value});
-  }
 
   Future<void> _showThemePicker(BuildContext context) async {
     final selected = await showDialog<AppThemeMode>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('المظهر'),
-          content: const SizedBox(
-            width: 280,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _ThemeOption(mode: AppThemeMode.light, label: 'فاتح'),
-                _ThemeOption(mode: AppThemeMode.dark, label: 'داكن'),
-                _ThemeOption(mode: AppThemeMode.system, label: 'النظام'),
-              ],
-            ),
+      builder: (context) => AlertDialog(
+        title: const Text('المظهر'),
+        content: const SizedBox(
+          width: 280,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _ThemeOption(mode: AppThemeMode.light, label: 'فاتح'),
+              _ThemeOption(mode: AppThemeMode.dark, label: 'داكن'),
+              _ThemeOption(mode: AppThemeMode.system, label: 'النظام'),
+            ],
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('إلغاء')),
-          ],
         ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('إلغاء')),
+        ],
       ),
     );
 
     if (selected == null) return;
-    await _saveThemeMode(selected);
-    AppThemeScope.of(context)?.value = selected.materialMode;
-    if (mounted) setState(() => _themeMode = selected);
+    final uid = FirebaseAuthRepository.instance.session.currentUser?.id;
+    try {
+      await AppThemeService(FirestoreService()).saveThemeMode(uid, selected);
+      if (!mounted) return;
+      AppThemeScope.of(context)?.value = selected.materialMode;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر حفظ المظهر: $error')));
+      }
+    }
   }
 
   Future<void> _requestNotifications() async {
@@ -114,6 +99,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
       behavior: SnackBarBehavior.floating,
     ));
   }
+
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: const Text('الملف الشخصي')),

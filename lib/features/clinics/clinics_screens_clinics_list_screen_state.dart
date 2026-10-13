@@ -102,14 +102,15 @@ class _ClinicsListScreenState extends State<ClinicsListScreen> {
                         itemBuilder: (context, index) {
                           final category = _categories[index];
                           final selected = category == _selectedCategory;
+                          final colors = Theme.of(context).colorScheme;
                           return ChoiceChip(
                             label: Text(category),
                             selected: selected,
                             onSelected: (_) => setState(() => _selectedCategory = category),
-                            selectedColor: AppColors.primary,
-                            backgroundColor: AppColors.surface,
-                            side: BorderSide(color: selected ? AppColors.primary : AppColors.border),
-                            labelStyle: TextStyle(color: selected ? Colors.white : AppColors.ink, fontSize: 12, fontWeight: FontWeight.w600),
+                            selectedColor: colors.primary,
+                            backgroundColor: colors.surface,
+                            side: BorderSide(color: selected ? colors.primary : colors.outlineVariant),
+                            labelStyle: TextStyle(color: selected ? colors.onPrimary : colors.onSurface, fontSize: 12, fontWeight: FontWeight.w600),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             showCheckmark: false,
                             padding: const EdgeInsets.symmetric(horizontal: 6),

@@ -195,22 +195,23 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                     separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
                     itemBuilder: (context, index) {
                       final selected = _selectedDay == index;
+                      final colors = Theme.of(context).colorScheme;
                       return InkWell(
                         onTap: () => setState(() => _selectedDay = index),
                         borderRadius: BorderRadius.circular(14),
                         child: Container(
                           width: 76,
                           decoration: BoxDecoration(
-                            color: selected ? AppColors.primary : AppColors.surface,
+                            color: selected ? colors.primary : colors.surface,
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: selected ? AppColors.primary : AppColors.border),
+                            border: Border.all(color: selected ? colors.primary : colors.outlineVariant),
                           ),
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text(_availability.keys.elementAt(index), style: TextStyle(color: selected ? Colors.white : AppColors.muted, fontSize: 11, fontWeight: FontWeight.w600)),
+                              Text(_availability.keys.elementAt(index), style: TextStyle(color: selected ? colors.onPrimary : colors.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w600)),
                               const SizedBox(height: 4),
-                              Text('${_availability.values.elementAt(index).length}', style: TextStyle(color: selected ? Colors.white : AppColors.ink, fontSize: 18, fontWeight: FontWeight.w800)),
+                              Text('${_availability.values.elementAt(index).length}', style: TextStyle(color: selected ? colors.onPrimary : colors.onSurface, fontSize: 18, fontWeight: FontWeight.w800)),
                             ],
                           ),
                         ),

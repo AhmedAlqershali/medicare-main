@@ -60,6 +60,7 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
                   separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
                   itemBuilder: (context, index) {
                     final selected = index == _selectedDate;
+                    final colors = Theme.of(context).colorScheme;
                     return InkWell(
                       onTap: () => setState(() {
                         _selectedDate = index;
@@ -69,8 +70,8 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
                       child: Container(
                         width: 90,
                         alignment: Alignment.center,
-                        decoration: BoxDecoration(color: selected ? AppColors.primary : AppColors.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: selected ? AppColors.primary : AppColors.border)),
-                        child: Text(_dates[index], textAlign: TextAlign.center, style: TextStyle(color: selected ? Colors.white : AppColors.ink, fontSize: 12, fontWeight: FontWeight.w700, height: 1.45)),
+                        decoration: BoxDecoration(color: selected ? colors.primary : colors.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: selected ? colors.primary : colors.outlineVariant)),
+                        child: Text(_dates[index], textAlign: TextAlign.center, style: TextStyle(color: selected ? colors.onPrimary : colors.onSurface, fontSize: 12, fontWeight: FontWeight.w700, height: 1.45)),
                       ),
                     );
                   },

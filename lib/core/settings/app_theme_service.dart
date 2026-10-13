@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import '../firestore/firestore_service.dart';
 import '../theme/app_theme.dart';
@@ -8,19 +9,23 @@ class AppThemeService {
 
   final FirestoreService _service;
 
-  Future<ThemeMode> loadThemeMode(String? uid) async {
-    if (uid == null || uid.isEmpty) return ThemeMode.system;
+  Future<AppThemeMode> loadThemeMode(String? uid) async {
+    if (uid == null || uid.isEmpty) return AppThemeMode.system;
 
     try {
       final snapshot = await _service.userDocument(uid).get();
-      return AppThemeMode.fromValue(snapshot.data()?['themeMode'] as String?).materialMode;
-    } catch (_) {
-      return ThemeMode.system;
+      final savedMode = snapshot.data()?['themeMode'];
+      return AppThemeMode.fromValue(savedMode is String ? savedMode : null);
+    } catch (error, stackTrace) {
+      debugPrint('Unable to load saved theme mode: $error\n$stackTrace');
+      return AppThemeMode.system;
     }
   }
 
   Future<void> saveThemeMode(String? uid, AppThemeMode mode) async {
-    if (uid == null || uid.isEmpty) return;
-    await _service.userDocument(uid).update({'themeMode': mode.value});
+    if (uid == null || uid.isEmpty) {
+      throw StateError('A signed-in user is required to save the theme mode.');
+    }
+    await _service.userDocument(uid).set({'themeMode': mode.value}, SetOptions(merge: true));
   }
 }

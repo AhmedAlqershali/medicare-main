@@ -8,22 +8,32 @@ class _QuickAction extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Material(
-        color: AppColors.surface,
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final tileColor = color == AppColors.mint
+        ? colors.primaryContainer
+        : color == AppColors.sky
+            ? colors.secondaryContainer
+            : color == AppColors.peach
+                ? colors.tertiaryContainer
+                : color;
+    return Material(
+        color: colors.surface,
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(16),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-            decoration: BoxDecoration(border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(16)),
+            decoration: BoxDecoration(border: Border.all(color: colors.outlineVariant), borderRadius: BorderRadius.circular(16)),
             child: Row(children: [
-              Container(width: 38, height: 38, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: AppColors.primaryDark, size: 20)),
+              Container(width: 38, height: 38, decoration: BoxDecoration(color: tileColor, borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: colors.primary, size: 20)),
               const SizedBox(width: AppSpacing.sm),
-              Expanded(child: Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.ink, fontWeight: FontWeight.w700))),
-              const Icon(Icons.chevron_left_rounded, color: AppColors.muted, size: 19),
+              Expanded(child: Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colors.onSurface, fontWeight: FontWeight.w700))),
+              Icon(Icons.chevron_left_rounded, color: colors.onSurfaceVariant, size: 19),
             ]),
           ),
         ),
       );
+  }
 }

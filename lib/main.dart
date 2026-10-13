@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/firestore/firestore_service.dart';
+import 'core/settings/app_theme_service.dart';
 import 'core/services/firebase_messaging_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/medicare_entry_screen.dart';
@@ -19,14 +20,8 @@ Future<void> main() async {
 
 Future<ThemeMode> _loadThemeMode() async {
   final uid = AuthRepositoryImpl.instance.currentUser?.id;
-  if (uid == null) return ThemeMode.system;
-
-  try {
-    final snapshot = await FirestoreService().userDocument(uid).get();
-    return AppThemeMode.fromValue(snapshot.data()?['themeMode'] as String?).materialMode;
-  } catch (_) {
-    return ThemeMode.system;
-  }
+  final mode = await AppThemeService(FirestoreService()).loadThemeMode(uid);
+  return mode.materialMode;
 }
 
 class MedicareApp extends StatelessWidget {

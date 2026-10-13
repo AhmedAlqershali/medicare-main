@@ -18,7 +18,7 @@ class _SummaryLine extends StatelessWidget {
             Expanded(
               child: Text(
                 value,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.ink, fontWeight: FontWeight.w700),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.w700),
               ),
             ),
           ],

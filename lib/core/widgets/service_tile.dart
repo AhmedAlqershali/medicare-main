@@ -10,16 +10,26 @@ class ServiceTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => InkWell(
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final tileColor = color == AppColors.mint
+        ? colors.primaryContainer
+        : color == AppColors.sky
+            ? colors.secondaryContainer
+            : color == AppColors.peach
+                ? colors.tertiaryContainer
+                : color;
+    return InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: SizedBox(
           width: double.infinity,
           child: Column(children: [
-            Container(height: 56, width: 56, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(16)), child: Icon(icon, color: AppColors.primaryDark, size: 25)),
+            Container(height: 56, width: 56, decoration: BoxDecoration(color: tileColor, borderRadius: BorderRadius.circular(16)), child: Icon(icon, color: colors.primary, size: 25)),
             const SizedBox(height: 8),
-            Text(label, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.ink, fontWeight: FontWeight.w600)),
+            Text(label, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colors.onSurface, fontWeight: FontWeight.w600)),
           ]),
         ),
       );
+  }
 }

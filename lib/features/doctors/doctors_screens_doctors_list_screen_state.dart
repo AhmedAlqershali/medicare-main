@@ -94,14 +94,15 @@ class _DoctorsListScreenState extends State<DoctorsListScreen> {
                       itemBuilder: (context, index) {
                         final specialty = _specialties[index];
                         final selected = specialty == _selectedSpecialty;
+                        final colors = Theme.of(context).colorScheme;
                         return ChoiceChip(
                           label: Text(displayDoctorSpecialty(context, specialty)),
                           selected: selected,
                           onSelected: (_) => setState(() => _selectedSpecialty = specialty),
-                          selectedColor: AppColors.primary,
-                          backgroundColor: AppColors.surface,
-                          side: BorderSide(color: selected ? AppColors.primary : AppColors.border),
-                          labelStyle: TextStyle(color: selected ? Colors.white : AppColors.ink, fontSize: 12, fontWeight: FontWeight.w600),
+                          selectedColor: colors.primary,
+                          backgroundColor: colors.surface,
+                          side: BorderSide(color: selected ? colors.primary : colors.outlineVariant),
+                          labelStyle: TextStyle(color: selected ? colors.onPrimary : colors.onSurface, fontSize: 12, fontWeight: FontWeight.w600),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           showCheckmark: false,
                           padding: const EdgeInsets.symmetric(horizontal: 6),

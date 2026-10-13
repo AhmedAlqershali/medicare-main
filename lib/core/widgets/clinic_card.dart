@@ -18,7 +18,7 @@ class ClinicCard extends StatelessWidget {
             Text(name, style: Theme.of(context).textTheme.titleMedium),
             Text(location, style: Theme.of(context).textTheme.bodyMedium),
           ])),
-          const Icon(Icons.chevron_left, color: AppColors.muted),
+          Icon(Icons.chevron_left, color: Theme.of(context).colorScheme.onSurfaceVariant),
         ]),
       );
 }

@@ -6,12 +6,14 @@ class _FilterTabs extends StatelessWidget {
   final ValueChanged<DoctorAppointmentFilter> onChanged;
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: colors.surface,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(color: colors.outlineVariant),
         ),
         child: Row(
           children: [
@@ -28,14 +30,14 @@ class _FilterTabs extends StatelessWidget {
                     duration: const Duration(milliseconds: 180),
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(
-                      color: selected == item.$1 ? AppColors.primary : Colors.transparent,
+                      color: selected == item.$1 ? colors.primary : Colors.transparent,
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
                       item.$2,
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: selected == item.$1 ? Colors.white : AppColors.muted,
+                        color: selected == item.$1 ? colors.onPrimary : colors.onSurfaceVariant,
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                       ),
@@ -46,4 +48,5 @@ class _FilterTabs extends StatelessWidget {
           ],
         ),
       );
+  }
 }

@@ -92,7 +92,7 @@ class _OrganizationDashboardState extends State<_OrganizationDashboard> {
                 AppAvatar(initials: _initials, size: 52, backgroundColor: AppColors.sky),
                 SizedBox(width: AppSpacing.sm),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('مرحباً بك في Medicare', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.ink)),
+                  Text('مرحباً بك في Medicare', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onSurface)),
                   SizedBox(height: 3),
                   Text(_organizationName, style: TextStyle(color: AppColors.muted, fontSize: 13, height: 1.45)),
                 ])),

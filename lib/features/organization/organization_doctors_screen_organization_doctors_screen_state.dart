@@ -85,14 +85,15 @@ class _OrganizationDoctorsScreenState extends State<OrganizationDoctorsScreen> {
                         itemBuilder: (context, index) {
                           final specialty = _specialties[index];
                           final selected = specialty == _selectedSpecialty;
+                          final colors = Theme.of(context).colorScheme;
                           return ChoiceChip(
                             label: Text(displayDoctorSpecialty(context, specialty)),
                             selected: selected,
                             onSelected: (_) => setState(() => _selectedSpecialty = specialty),
-                            selectedColor: AppColors.primary,
-                            backgroundColor: AppColors.surface,
-                            side: BorderSide(color: selected ? AppColors.primary : AppColors.border),
-                            labelStyle: TextStyle(color: selected ? Colors.white : AppColors.ink, fontSize: 12, fontWeight: FontWeight.w600),
+                            selectedColor: colors.primary,
+                            backgroundColor: colors.surface,
+                            side: BorderSide(color: selected ? colors.primary : colors.outlineVariant),
+                            labelStyle: TextStyle(color: selected ? colors.onPrimary : colors.onSurface, fontSize: 12, fontWeight: FontWeight.w600),
                             showCheckmark: false,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           );
@@ -104,7 +105,7 @@ class _OrganizationDoctorsScreenState extends State<OrganizationDoctorsScreen> {
                     const SizedBox(height: AppSpacing.sm),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border)),
+                      decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: Theme.of(context).colorScheme.outlineVariant)),
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
                           isExpanded: true,

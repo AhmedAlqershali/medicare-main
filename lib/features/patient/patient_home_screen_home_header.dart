@@ -20,7 +20,7 @@ class _HomeHeader extends StatelessWidget {
         IconButton(
           onPressed: _noop,
           icon: const Icon(Icons.notifications_none_rounded, size: 23),
-          color: AppColors.ink,
+          color: Theme.of(context).colorScheme.onSurface,
           tooltip: 'الإشعارات',
           visualDensity: VisualDensity.compact,
         ),

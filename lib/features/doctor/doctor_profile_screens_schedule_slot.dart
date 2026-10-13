@@ -15,7 +15,7 @@ class _ScheduleSlot extends StatelessWidget {
         child: Column(children: [
           Icon(booked ? Icons.event_available_outlined : Icons.access_time_outlined, color: booked ? Colors.white : AppColors.primary, size: 18),
           const SizedBox(height: 4),
-          Text(time, style: TextStyle(color: booked ? Colors.white : AppColors.ink, fontSize: 12, fontWeight: FontWeight.w700)),
+          Text(time, style: TextStyle(color: booked ? Colors.white : Theme.of(context).colorScheme.onSurface, fontSize: 12, fontWeight: FontWeight.w700)),
           const SizedBox(height: 6),
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             IconButton(onPressed: onEdit, icon: Icon(Icons.edit_outlined, color: booked ? Colors.white : AppColors.primary), tooltip: 'تعديل'),

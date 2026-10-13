@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme/app_theme.dart';
-
 part 'custom_text_field_text_field.dart';
 part 'custom_text_field_text_field_state.dart';
 
