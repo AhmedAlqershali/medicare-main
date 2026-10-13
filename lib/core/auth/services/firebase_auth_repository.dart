@@ -423,12 +423,13 @@ class FirebaseAuthRepository implements AuthRepository {
           !commitOutcomeUnknown &&
           createdAuthAccount &&
           firebaseUser != null) {
+        try {
+          await firebaseUser.delete();
+        } catch (_) {
           try {
-            await firebaseUser.delete();
-          } catch (_) {
-            try {
-              await _firebaseAuth.signOut();
-            } catch (_) {}
+            await _firebaseAuth.signOut();
+          } catch (_) {}
+        }
       }
       final message = switch (error) {
         FirebaseAuthException exception => exception.message ?? _mapFirebaseAuthError(exception),
@@ -440,8 +441,11 @@ class FirebaseAuthRepository implements AuthRepository {
   }
 
   @override
-  void logout() {
-    _firebaseAuth.signOut();
-    _session = const AuthSession.signedOut();
+  Future<void> logout() async {
+    try {
+      await _firebaseAuth.signOut();
+    } finally {
+      _session = const AuthSession.signedOut();
+    }
   }
 }

@@ -1119,12 +1119,13 @@ class FirebaseAuthDataSource {
           !commitOutcomeUnknown &&
           createdAuthAccount &&
           firebaseUser != null) {
+        try {
+          await firebaseUser.delete();
+        } catch (_) {
           try {
-            await firebaseUser.delete();
-          } catch (_) {
-            try {
-              await _firebaseAuth.signOut();
-            } catch (_) {}
+            await _firebaseAuth.signOut();
+          } catch (_) {}
+        }
       }
 
       final message = switch (error) {

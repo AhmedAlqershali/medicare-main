@@ -57,11 +57,13 @@ class FirebaseMessagingService {
       debugPrint('[FCM] Notification permission was denied.');
     }
 
-    _messageSubscription = _messaging.onMessage.listen(_handleForegroundMessage);
+    _messageSubscription =
+        FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
     _openedMessageSubscription =
         FirebaseMessaging.onMessageOpenedApp.listen(_openedMessageController.add);
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-    _tokenRefreshSubscription = FirebaseMessaging.onTokenRefresh.listen((token) {
+    _tokenRefreshSubscription =
+        FirebaseMessaging.onTokenRefresh.listen((token) {
       unawaited(ensureTokenForUser(token));
     });
 
