@@ -15,7 +15,7 @@ import '../clinics/domain/entities/clinic_entity.dart';
 import '../doctors/data/repositories/doctors_repository_impl.dart';
 import '../doctors/domain/entities/doctor_entity.dart';
 import 'widgets/patient_appointment_card.dart';
-
+import '../../core/firestore/repositories/firestore_patient_repository.dart';
 part 'patient_home_screen_patient_home_screen_state.dart';
 part 'patient_home_screen_home_content.dart';
 part 'patient_home_screen_home_header.dart';

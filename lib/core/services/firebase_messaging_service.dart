@@ -7,119 +7,150 @@ import 'package:flutter/foundation.dart';
 
 import '../firestore/firestore_service.dart';
 
-Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  debugPrint(
-    '[FCM] Background message handled by native Android service: '
-    '${message.notification?.title ?? message.data['title']} from ${message.messageId}',
-  );
+Future<void> firebaseMessagingBackgroundHandler(
+RemoteMessage message,
+) async {
+debugPrint(
+'[FCM] Background message handled by native Android service: '
+'${message.notification?.title ?? message.data['title']} '
+'from ${message.messageId}',
+);
 }
 
 class FirebaseMessagingService {
-  FirebaseMessagingService._({
-    FirebaseMessaging? messaging,
-    FirebaseAuth? auth,
-    FirestoreService? firestoreService,
-  })  : _messaging = messaging ?? FirebaseMessaging.instance,
-        _auth = auth ?? FirebaseAuth.instance,
-        _firestoreService = firestoreService ?? FirestoreService();
+FirebaseMessagingService._({
+FirebaseMessaging? messaging,
+FirebaseAuth? auth,
+FirestoreService? firestoreService,
+})  : _messaging = messaging ?? FirebaseMessaging.instance,
+_auth = auth ?? FirebaseAuth.instance,
+_firestoreService = firestoreService ?? FirestoreService();
 
-  static final FirebaseMessagingService instance = FirebaseMessagingService._();
+static final FirebaseMessagingService instance =
+FirebaseMessagingService._();
 
-  final FirebaseMessaging _messaging;
-  final FirebaseAuth _auth;
-  final FirestoreService _firestoreService;
+final FirebaseMessaging _messaging;
+final FirebaseAuth _auth;
+final FirestoreService _firestoreService;
 
-  final StreamController<RemoteMessage> _messageController =
-      StreamController<RemoteMessage>.broadcast(sync: true);
-  final StreamController<RemoteMessage> _openedMessageController =
-      StreamController<RemoteMessage>.broadcast(sync: true);
-  StreamSubscription<RemoteMessage>? _messageSubscription;
-  StreamSubscription<RemoteMessage>? _openedMessageSubscription;
-  StreamSubscription<String>? _tokenRefreshSubscription;
-  bool _initialized = false;
+final StreamController<RemoteMessage> _messageController =
+StreamController<RemoteMessage>.broadcast(sync: true);
 
-  Stream<RemoteMessage> get messages => _messageController.stream;
-  Stream<RemoteMessage> get openedMessages => _openedMessageController.stream;
+final StreamController<RemoteMessage> _openedMessageController =
+StreamController<RemoteMessage>.broadcast(sync: true);
 
-  Future<void> initialize() async {
-    if (_initialized || _auth.currentUser == null) return;
-    _initialized = true;
+StreamSubscription<RemoteMessage>? _messageSubscription;
+StreamSubscription<RemoteMessage>? _openedMessageSubscription;
+StreamSubscription<String>? _tokenRefreshSubscription;
 
-    final permission = await _messaging.requestPermission(
-      alert: true,
-      sound: true,
-      badge: true,
-      carPlay: true,
-      criticalAlert: true,
-      provisional: true,
-    );
-    if (permission == PermissionStatus.denied) {
-      debugPrint('[FCM] Notification permission was denied.');
-    }
+bool _initialized = false;
 
-    _messageSubscription = _messaging.onMessage.listen(_handleForegroundMessage);
-    _openedMessageSubscription =
-        _messaging.onMessageOpenedApp.listen(_openedMessageController.add);
-    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-    _tokenRefreshSubscription = FirebaseMessaging.onTokenRefresh.listen((token) {
-      unawaited(ensureTokenForUser(token));
-    });
+Stream<RemoteMessage> get messages => _messageController.stream;
 
-    final initialMessage = await _messaging.getInitialMessage();
-    if (initialMessage != null) {
-      _openedMessageController.add(initialMessage);
-    }
+Stream<RemoteMessage> get openedMessages =>
+_openedMessageController.stream;
 
-    await ensureTokenForCurrentUser();
-  }
+Future<void> initialize() async {
+if (_initialized || _auth.currentUser == null) return;
 
-  void _handleForegroundMessage(RemoteMessage message) {
-    _messageController.add(message);
-  }
+_initialized = true;
 
-  Future<void> ensureTokenForCurrentUser() async {
-    final uid = _auth.currentUser?.uid;
-    if (uid == null || uid.isEmpty) return;
+try {
+final permission = await _messaging.requestPermission(
+alert: true,
+sound: true,
+badge: true,
+carPlay: true,
+criticalAlert: true,
+provisional: true,
+);
 
-    final token = await _messaging.getToken();
-    if (token == null || token.isEmpty) return;
+if (permission.authorizationStatus ==
+AuthorizationStatus.denied) {
+debugPrint('[FCM] Notification permission was denied.');
+}
 
-    await ensureTokenForUser(token);
-  }
+FirebaseMessaging.onBackgroundMessage(
+firebaseMessagingBackgroundHandler,
+);
 
-  Future<void> ensureTokenForUser(String token) async {
-    final uid = _auth.currentUser?.uid;
-    if (uid == null || uid.isEmpty || token.isEmpty) return;
+_messageSubscription =
+FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
 
-    await _firestoreService.userDocument(uid).update({
-      'fcmTokens': FieldValue.arrayUnion(token),
-    });
-  }
+_openedMessageSubscription =
+FirebaseMessaging.onMessageOpenedApp.listen(
+_openedMessageController.add,
+);
 
-  Future<void> removeCurrentTokenForUser(String uid) async {
-    if (uid.isEmpty) return;
+_tokenRefreshSubscription =
+_messaging.onTokenRefresh.listen((token) {
+unawaited(ensureTokenForUser(token));
+});
 
-    final token = await _messaging.getToken();
-    if (token == null || token.isEmpty) return;
+final initialMessage = await _messaging.getInitialMessage();
 
-    await _firestoreService.userDocument(uid).update({
-      'fcmTokens': FieldValue.arrayRemove(token),
-    });
-  }
+if (initialMessage != null) {
+_openedMessageController.add(initialMessage);
+}
 
-  void reset() {
-    _messageSubscription?.cancel();
-    _openedMessageSubscription?.cancel();
-    _tokenRefreshSubscription?.cancel();
-    _messageSubscription = null;
-    _openedMessageSubscription = null;
-    _tokenRefreshSubscription = null;
-    _initialized = false;
-  }
+await ensureTokenForCurrentUser();
+} catch (error, stackTrace) {
+_initialized = false;
+debugPrint('[FCM] Initialization failed: $error');
+debugPrintStack(stackTrace: stackTrace);
+rethrow;
+}
+}
 
-  Future<void> dispose() async {
-    reset();
-    await _messageController.close();
-    await _openedMessageController.close();
-  }
+void _handleForegroundMessage(RemoteMessage message) {
+_messageController.add(message);
+}
+
+Future<void> ensureTokenForCurrentUser() async {
+final uid = _auth.currentUser?.uid;
+if (uid == null || uid.isEmpty) return;
+
+final token = await _messaging.getToken();
+if (token == null || token.isEmpty) return;
+
+await ensureTokenForUser(token);
+}
+
+Future<void> ensureTokenForUser(String token) async {
+final uid = _auth.currentUser?.uid;
+if (uid == null || uid.isEmpty || token.isEmpty) return;
+
+await _firestoreService.userDocument(uid).update({
+'fcmTokens': FieldValue.arrayUnion([token]),
+});
+}
+
+Future<void> removeCurrentTokenForUser(String uid) async {
+if (uid.isEmpty) return;
+
+final token = await _messaging.getToken();
+if (token == null || token.isEmpty) return;
+
+await _firestoreService.userDocument(uid).update({
+'fcmTokens': FieldValue.arrayRemove([token]),
+});
+}
+
+void reset() {
+_messageSubscription?.cancel();
+_openedMessageSubscription?.cancel();
+_tokenRefreshSubscription?.cancel();
+
+_messageSubscription = null;
+_openedMessageSubscription = null;
+_tokenRefreshSubscription = null;
+
+_initialized = false;
+}
+
+Future<void> dispose() async {
+reset();
+await _messageController.close();
+await _openedMessageController.close();
+}
 }

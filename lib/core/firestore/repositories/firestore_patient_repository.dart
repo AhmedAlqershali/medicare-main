@@ -1,3 +1,4 @@
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -131,6 +132,8 @@ class FirestorePatientRepository implements PatientRepository {
     String? organizationId,
     required DateTime appointmentDate,
     required TimeOfDay appointmentTime,
+    String? problemLocation,
+    String? medicalNotes,
   }) async {
     final doctor = await _doctorRepository.doctorForId(
       doctorId,
@@ -186,6 +189,7 @@ class FirestorePatientRepository implements PatientRepository {
       firebaseUid: null,
       createdAt: now,
       updatedAt: now,
+      problemLocation: problemLocation?.trim(),
     );
 
     final appointmentDateTime = DateTime(
@@ -227,6 +231,25 @@ class FirestorePatientRepository implements PatientRepository {
       appointment,
     );
 
+    // Store the initial medical note in the permanent notes subcollection.
+    final initialNoteText = medicalNotes?.trim() ?? '';
+
+    if (initialNoteText.isNotEmpty) {
+      final noteReference = _service
+          .medicalNotesCollection(patient.organizationId, patient.id)
+          .doc();
+
+      batch.set(
+        noteReference,
+        {
+          'text': initialNoteText,
+          'createdAt': FieldValue.serverTimestamp(),
+          'doctorUid': currentUid,
+          'doctorName': doctor.name,
+        },
+      );
+    }
+
     await batch.commit();
 
     return patient;
@@ -236,8 +259,7 @@ class FirestorePatientRepository implements PatientRepository {
       String patientId, {
         String? organizationId,
       }) async {
-    if (organizationId == null ||
-        organizationId.trim().isEmpty) {
+    if (organizationId == null || organizationId.trim().isEmpty) {
       return null;
     }
 
@@ -262,9 +284,7 @@ class FirestorePatientRepository implements PatientRepository {
   ///
   /// This is used during the first patient account activation, before
   /// users/{uid} exists.
-  Future<Patient?> fetchPendingPatientByEmail(
-      String email,
-      ) async {
+  Future<Patient?> fetchPendingPatientByEmail(String email) async {
     final normalizedEmail = email.trim().toLowerCase();
 
     if (normalizedEmail.isEmpty) {
@@ -273,10 +293,7 @@ class FirestorePatientRepository implements PatientRepository {
 
     final snapshot = await FirebaseFirestore.instance
         .collectionGroup('patients')
-        .where(
-      'email',
-      isEqualTo: normalizedEmail,
-    )
+        .where('email', isEqualTo: normalizedEmail)
         .where('status', isEqualTo: AccountStatus.pending.name)
         .where('accountActivated', isEqualTo: false)
         .where('firebaseUid', isEqualTo: null)
@@ -287,24 +304,25 @@ class FirestorePatientRepository implements PatientRepository {
     for (final document in snapshot.docs) {
       final data = document.data();
 
-      final accountActivated =
-          data['accountActivated'] == true;
+      final accountActivated = data['accountActivated'] == true;
       final status = data['status']?.toString();
-
-      final firebaseUid =
-      data['firebaseUid']?.toString();
+      final firebaseUid = data['firebaseUid']?.toString();
 
       if (status == AccountStatus.pending.name &&
           !accountActivated &&
           (firebaseUid == null || firebaseUid.isEmpty)) {
         final organizationId = document.reference.parent.parent?.id;
+
         if (organizationId == null ||
             data['organizationId'] != organizationId ||
             data['doctorId'] is! String ||
             (data['doctorId'] as String).isEmpty ||
             data['id'] != document.id) {
-          throw StateError('بيانات سجل المريض غير مكتملة أو غير متطابقة.');
+          throw StateError(
+            'بيانات سجل المريض غير مكتملة أو غير متطابقة.',
+          );
         }
+
         if (pendingPatient != null) {
           throw StateError(
             'يوجد أكثر من سجل مريض بنفس البريد الإلكتروني. '
@@ -342,9 +360,11 @@ class FirestorePatientRepository implements PatientRepository {
     required String doctorName,
   }) async {
     final trimmedText = text.trim();
+
     if (trimmedText.isEmpty) {
       throw StateError('يجب إدخال نص الملاحظة الطبية.');
     }
+
     if (doctorUid.trim().isEmpty) {
       throw StateError('يجب تحديد الطبيب الذي يضيف الملاحظة.');
     }
@@ -353,26 +373,24 @@ class FirestorePatientRepository implements PatientRepository {
       patientId,
       organizationId: organizationId,
     );
+
     if (patient == null) {
       throw StateError('لم يتم العثور على سجل المريض المطلوب.');
     }
 
-    final noteId = _service
+    final noteReference = _service
         .medicalNotesCollection(patient.organizationId, patient.id)
-        .doc()
-        .id;
+        .doc();
+
     final note = MedicalNote(
-      id: noteId,
+      id: noteReference.id,
       text: trimmedText,
       createdAt: DateTime.now(),
       doctorUid: doctorUid.trim(),
       doctorName: doctorName.trim(),
     );
 
-    await _service
-        .medicalNotesCollection(patient.organizationId, patient.id)
-        .doc(noteId)
-        .set({
+    await noteReference.set({
       'text': note.text,
       'createdAt': FieldValue.serverTimestamp(),
       'doctorUid': note.doctorUid,
@@ -390,6 +408,7 @@ class FirestorePatientRepository implements PatientRepository {
       patientId,
       organizationId: organizationId,
     );
+
     if (patient == null) {
       return const [];
     }
@@ -400,16 +419,23 @@ class FirestorePatientRepository implements PatientRepository {
         .get();
 
     final notes = snapshot.docs
-        .map((document) =>
-            MedicalNote.fromMap(document.id, document.data()))
+        .map(
+          (document) => MedicalNote.fromMap(
+        document.id,
+        document.data(),
+      ),
+    )
         .toList();
 
+    // Include an older legacy note without deleting or overwriting it.
     if (patient.notes?.trim().isNotEmpty ?? false) {
       notes.add(
         MedicalNote(
           id: 'legacy-${patient.id}',
           text: patient.notes!.trim(),
-          createdAt: patient.updatedAt ?? patient.createdAt ?? DateTime.now(),
+          createdAt: patient.updatedAt ??
+              patient.createdAt ??
+              DateTime.now(),
           doctorUid: patient.doctorId,
           doctorName: null,
         ),
@@ -523,12 +549,12 @@ class FirestorePatientRepository implements PatientRepository {
       firebaseUid: firebaseUid,
       createdAt: patient.createdAt ?? now,
       updatedAt: now,
+      problemLocation: patient.problemLocation,
     );
 
     final activationBatch = batch ?? FirebaseFirestore.instance.batch();
 
-    final patientReference = _service
-        .patientDocumentForOrganization(
+    final patientReference = _service.patientDocumentForOrganization(
       updatedPatient.organizationId,
       updatedPatient.id,
     );
@@ -540,9 +566,7 @@ class FirestorePatientRepository implements PatientRepository {
     );
 
     final appointmentsSnapshot = await _service
-        .appointmentCollection(
-      updatedPatient.organizationId,
-    )
+        .appointmentCollection(updatedPatient.organizationId)
         .where(
       'patientId',
       isEqualTo: updatedPatient.id,
@@ -551,6 +575,7 @@ class FirestorePatientRepository implements PatientRepository {
 
     for (final document in appointmentsSnapshot.docs) {
       final appointmentUid = document.data()['patientUid'];
+
       if (appointmentUid == null) {
         activationBatch.set(
           document.reference,
@@ -567,7 +592,9 @@ class FirestorePatientRepository implements PatientRepository {
       }
     }
 
-    if (batch == null) await activationBatch.commit();
+    if (batch == null) {
+      await activationBatch.commit();
+    }
   }
 
   String _formatDate(DateTime date) {
@@ -577,15 +604,9 @@ class FirestorePatientRepository implements PatientRepository {
   }
 
   String _formatTime(TimeOfDay time) {
-    final hour =
-    time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
-
-    final minute = time.minute
-        .toString()
-        .padLeft(2, '0');
-
-    final period =
-    time.period == DayPeriod.am ? 'ص' : 'م';
+    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+    final minute = time.minute.toString().padLeft(2, '0');
+    final period = time.period == DayPeriod.am ? 'ص' : 'م';
 
     return '$hour:$minute $period';
   }
@@ -602,9 +623,7 @@ class FirestorePatientRepository implements PatientRepository {
     }
 
     if (parts.length == 1) {
-      return parts.first
-          .substring(0, 1)
-          .toUpperCase();
+      return parts.first.substring(0, 1).toUpperCase();
     }
 
     return '${parts.first.substring(0, 1).toUpperCase()}'

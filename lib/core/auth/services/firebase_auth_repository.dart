@@ -645,10 +645,10 @@
         return AuthResult(success: false, message: message);
       }
     }
-  
+
     @override
-    void logout() {
-      _firebaseAuth.signOut();
+    Future<void> logout() async {
+      await _firebaseAuth.signOut();
       _session = const AuthSession.signedOut();
     }
   }

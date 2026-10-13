@@ -5,7 +5,6 @@ import '../../../../core/auth/models/account_role.dart';
 import '../../../../core/auth/models/account_status.dart';
 import '../../../../core/auth/models/invitation_status.dart';
 import '../../../../core/auth/models/doctor.dart';
-import '../../../../core/auth/models/invitation.dart';
 import '../../../../core/auth/models/organization.dart';
 import '../../../../core/auth/models/patient.dart';
 import '../../../../core/auth/models/auth_session.dart';
