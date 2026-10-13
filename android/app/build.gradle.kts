@@ -6,6 +6,14 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val firebaseCoreProject = project(":firebase_core")
+val flutterFireConfig =
+    rootProject.extensions.extraProperties.properties["FlutterFire"] as? Map<*, *>
+val firebaseSdkVersion =
+    flutterFireConfig?.get("FirebaseSDKVersion") as? String
+        ?: firebaseCoreProject.properties["FirebaseSDKVersion"] as? String
+        ?: error("FirebaseSDKVersion is not configured by firebase_core")
+
 android {
     namespace = "com.example.medicare"
     compileSdk = flutter.compileSdkVersion
@@ -42,4 +50,9 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    implementation(platform("com.google.firebase:firebase-bom:$firebaseSdkVersion"))
+    implementation("com.google.firebase:firebase-messaging")
 }
