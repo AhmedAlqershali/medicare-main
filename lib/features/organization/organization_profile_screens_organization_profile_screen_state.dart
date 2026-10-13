@@ -80,10 +80,10 @@ class _OrganizationProfileScreenState extends State<OrganizationProfileScreen> {
               _SettingTile(icon: Icons.edit_outlined, title: 'تعديل الملف', onTap: () {
                 if (!_saving) _editProfile();
               }),
-              _SettingTile(icon: Icons.notifications_none_rounded, title: 'الإشعارات', onTap: () => _showMessage(context: context, message: 'لا توجد إشعارات جديدة.')),
-              _SettingTile(icon: Icons.brightness_6_outlined, title: 'المظهر', onTap: () => _showMessage(context: context, message: 'تم ضبط المظهر على الوضع الفاتح')),
-              _SettingTile(icon: Icons.support_agent_outlined, title: 'المساعدة', onTap: () => _showMessage(context: context, message: 'سيتم التواصل معك في أقرب وقت')),
-              _SettingTile(icon: Icons.info_outline, title: 'عن Medicare', onTap: () => _showMessage(context: context, message: 'Medicare منصة رعاية صحية حديثة')),
+              _SettingTile(icon: Icons.notifications_none_rounded, title: 'الإشعارات', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AppNotificationSettingsScreen()))),
+              _SettingTile(icon: Icons.brightness_6_outlined, title: 'المظهر', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AppThemeSettingsScreen()))),
+              _SettingTile(icon: Icons.support_agent_outlined, title: 'المساعدة', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AppHelpScreen()))),
+              _SettingTile(icon: Icons.info_outline, title: 'عن Medicare', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AppAboutScreen()))),
               _SettingTile(icon: Icons.logout_rounded, title: 'تسجيل الخروج', color: const Color(0xFFC84C4C), onTap: () => _showLogoutDialog(context)),
             ]),
           ),

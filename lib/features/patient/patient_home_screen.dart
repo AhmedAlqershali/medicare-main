@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/auth/services/firebase_auth_repository.dart';
-import '../../core/firestore/repositories/firestore_patient_repository.dart';
+import '../../core/localization/doctor_specialty_display.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/medicare_widgets.dart';
 import '../clinics/clinics_screens.dart';
@@ -24,6 +24,7 @@ part 'patient_home_screen_quick_action.dart';
 part 'patient_home_screen_doctors_section.dart';
 part 'patient_home_screen_doctor_card.dart';
 part 'patient_home_screen_clinics_section.dart';
+
 
 class PatientHomeScreen extends StatefulWidget {
   const PatientHomeScreen({super.key});

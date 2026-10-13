@@ -13,7 +13,7 @@ class AppointmentCard extends StatelessWidget {
       Row(children: [
         AppAvatar(initials: appointment.doctorInitials, size: 52, backgroundColor: appointment.avatarColor),
         const SizedBox(width: AppSpacing.sm),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(appointment.doctorName, style: Theme.of(context).textTheme.titleMedium), const SizedBox(height: 3), Text(appointment.specialty, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.primaryDark, fontWeight: FontWeight.w600))])),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(appointment.doctorName, style: Theme.of(context).textTheme.titleMedium), const SizedBox(height: 3), Text(displayDoctorSpecialty(context, appointment.specialty), style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.primaryDark, fontWeight: FontWeight.w600))])),
         StatusBadge(label: status.label, color: status.color),
       ]),
       const SizedBox(height: AppSpacing.md),

@@ -95,7 +95,7 @@ class _DoctorsListScreenState extends State<DoctorsListScreen> {
                         final specialty = _specialties[index];
                         final selected = specialty == _selectedSpecialty;
                         return ChoiceChip(
-                          label: Text(specialty),
+                          label: Text(displayDoctorSpecialty(context, specialty)),
                           selected: selected,
                           onSelected: (_) => setState(() => _selectedSpecialty = specialty),
                           selectedColor: AppColors.primary,

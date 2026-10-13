@@ -37,7 +37,7 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
                         children: [
                           Text(appointment.doctorName, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 18)),
                           const SizedBox(height: 4),
-                          Text(appointment.specialty, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.primaryDark, fontWeight: FontWeight.w600)),
+                          Text(displayDoctorSpecialty(context, appointment.specialty), style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.primaryDark, fontWeight: FontWeight.w600)),
                           const SizedBox(height: AppSpacing.sm),
                           TextButton(onPressed: () => _openDoctor(appointment), child: const Text('عرض الملف')),
                         ],

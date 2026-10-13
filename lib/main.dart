@@ -2,6 +2,9 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'core/firestore/firestore_service.dart';
+import 'core/services/firebase_messaging_service.dart';
+import 'core/theme/app_theme.dart';
 import 'features/auth/medicare_entry_screen.dart';
 import 'features/auth/data/repositories/auth_repository_impl.dart';
 
@@ -9,32 +12,53 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   await AuthRepositoryImpl.instance.restoreSession();
-  runApp(const MedicareApp());
+  await FirebaseMessagingService.instance.initialize();
+  final themeMode = ValueNotifier<ThemeMode>(await _loadThemeMode());
+  runApp(MedicareApp(themeMode: themeMode));
+}
+
+Future<ThemeMode> _loadThemeMode() async {
+  final uid = AuthRepositoryImpl.instance.currentUser?.id;
+  if (uid == null) return ThemeMode.system;
+
+  try {
+    final snapshot = await FirestoreService().userDocument(uid).get();
+    return AppThemeMode.fromValue(snapshot.data()?['themeMode'] as String?).materialMode;
+  } catch (_) {
+    return ThemeMode.system;
+  }
 }
 
 class MedicareApp extends StatelessWidget {
-  const MedicareApp({super.key});
+  const MedicareApp({super.key, required this.themeMode});
+
+  final ValueNotifier<ThemeMode> themeMode;
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Medicare',
-
-      locale: const Locale('ar'),
-
-      supportedLocales: const [
-        Locale('ar'),
-        Locale('en'),
-      ],
-
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-
-      home: const MedicareEntryScreen(),
+    return AppThemeScope(
+      notifier: themeMode,
+      child: AnimatedBuilder(
+        animation: themeMode,
+        builder: (context, _) => MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'Medicare',
+          theme: buildAppTheme(),
+          darkTheme: buildAppDarkTheme(),
+          themeMode: themeMode.value,
+          locale: const Locale('ar'),
+          supportedLocales: const [
+            Locale('ar'),
+            Locale('en'),
+          ],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          home: const MedicareEntryScreen(),
+        ),
+      ),
     );
   }
 }

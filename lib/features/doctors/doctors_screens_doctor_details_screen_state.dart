@@ -25,7 +25,7 @@ class _DoctorDetailsScreenState extends State<DoctorDetailsScreen> {
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(widget.doctor.name, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 18)),
                     const SizedBox(height: 4),
-                    Text(widget.doctor.specialty, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.primaryDark, fontWeight: FontWeight.w600)),
+                    Text(displayDoctorSpecialty(context, widget.doctor.specialty), style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.primaryDark, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 7),
                     Row(children: [
                       const Icon(Icons.star_rounded, color: AppColors.warning, size: 17),

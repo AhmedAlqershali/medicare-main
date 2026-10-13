@@ -15,11 +15,13 @@ class AuthNavigation {
     );
   }
 
-  static void openSignedOutFlow(BuildContext context) {
-    AuthRepositoryImpl.instance.logout();
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(builder: (_) => const MedicareEntryScreen()),
-      (_) => false,
-    );
+  static Future<void> openSignedOutFlow(BuildContext context) async {
+    await AuthRepositoryImpl.instance.logout();
+    if (context.mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(builder: (_) => const MedicareEntryScreen()),
+        (_) => false,
+      );
+    }
   }
 }

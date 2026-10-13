@@ -5,60 +5,47 @@ class MedicalNote {
     required this.id,
     required this.text,
     required this.createdAt,
-    this.doctorId,
+    this.doctorUid,
     this.doctorName,
   });
 
   final String id;
   final String text;
-  final DateTime? createdAt;
-  final String? doctorId;
+  final DateTime createdAt;
+  final String? doctorUid;
   final String? doctorName;
-
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'text': text.trim(),
-      'createdAt': createdAt?.toUtc().toIso8601String(),
-      'doctorId': doctorId,
-      'doctorName': doctorName,
-    };
-  }
-
-  factory MedicalNote.fromMap(Map<String, dynamic> map) {
-    DateTime? createdAt;
-
-    final rawCreatedAt = map['createdAt'];
-
-    if (rawCreatedAt is Timestamp) {
-    createdAt = rawCreatedAt.toDate();
-    } else if (rawCreatedAt is String) {
-    createdAt = DateTime.tryParse(rawCreatedAt);
-    }
-
-    return MedicalNote(
-    id: map['id']?.toString() ?? '',
-    text: map['text']?.toString() ?? '',
-    createdAt: createdAt,
-    doctorId: map['doctorId']?.toString(),
-    doctorName: map['doctorName']?.toString(),
-    );
-
-  }
 
   MedicalNote copyWith({
     String? id,
     String? text,
     DateTime? createdAt,
-    String? doctorId,
+    String? doctorUid,
     String? doctorName,
-  }) {
+  }) =>
+      MedicalNote(
+        id: id ?? this.id,
+        text: text ?? this.text,
+        createdAt: createdAt ?? this.createdAt,
+        doctorUid: doctorUid ?? this.doctorUid,
+        doctorName: doctorName ?? this.doctorName,
+      );
+
+  factory MedicalNote.fromMap(String id, Map<String, dynamic> map) {
+    final createdAt = map['createdAt'];
     return MedicalNote(
-      id: id ?? this.id,
-      text: text ?? this.text,
-      createdAt: createdAt ?? this.createdAt,
-      doctorId: doctorId ?? this.doctorId,
-      doctorName: doctorName ?? this.doctorName,
+      id: id,
+      text: map['text'] as String? ?? '',
+      createdAt: createdAt is Timestamp
+          ? createdAt.toDate()
+          : DateTime.tryParse(createdAt.toString()) ?? DateTime.now(),
+      doctorUid: map['doctorUid'] as String?,
+      doctorName: map['doctorName'] as String?,
     );
+  }
+
+  static List<MedicalNote> sortNewestFirst(List<MedicalNote> notes) {
+    final sorted = List<MedicalNote>.from(notes);
+    sorted.sort((first, second) => second.createdAt.compareTo(first.createdAt));
+    return sorted;
   }
 }
