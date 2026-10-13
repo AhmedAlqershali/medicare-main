@@ -11,9 +11,12 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Admin operations require a trusted Firebase Auth custom claim.
+    // Admin authorization uses the trusted admins/{uid} document.
     function isAdmin() {
-      return signedIn() && request.auth.token.admin == true;
+      return signedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'admin'
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true;
     }
 
     function userProfile(uid) {
@@ -128,12 +131,8 @@ service cloud.firestore {
         patientDocument(orgId, patientId).data.get('firebaseUid', null) == null;
     }
 
-
     // ============================================================
     // ADMIN DOCUMENTS
-    // Dashboard checks admins/{uid} for role == "admin"
-    // and active == true. Users can read only their own document.
-    // Admin documents cannot be created or changed by clients.
     // ============================================================
 
     match /admins/{uid} {
@@ -141,7 +140,6 @@ service cloud.firestore {
       allow list: if false;
       allow create, update, delete: if false;
     }
-
 
     // ============================================================
     // USERS
@@ -203,7 +201,6 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-
     // ============================================================
     // ORGANIZATIONS
     // ============================================================
@@ -241,7 +238,6 @@ service cloud.firestore {
 
       allow delete: if false;
     }
-
 
     // ============================================================
     // INVITATIONS
@@ -306,7 +302,6 @@ service cloud.firestore {
         resource.data.status == 'pending';
     }
 
-
     // ============================================================
     // DOCTORS
     // ============================================================
@@ -343,7 +338,6 @@ service cloud.firestore {
 
       allow delete: if signedIn() && ownsOrganization(organizationId);
     }
-
 
     // ============================================================
     // PATIENTS
@@ -405,11 +399,8 @@ service cloud.firestore {
         resource.data.get('firebaseUid', null) == null;
     }
 
-
     // ============================================================
     // PERMANENT MEDICAL NOTES
-    // Notes can be created by the patient's doctor and cannot be
-    // edited or deleted by clients.
     // ============================================================
 
     match /organizations/{organizationId}/patients/{patientId}/medical_notes/{noteId} {
@@ -440,7 +431,6 @@ service cloud.firestore {
 
       allow update, delete: if false;
     }
-
 
     // ============================================================
     // CLINICS
@@ -477,7 +467,6 @@ service cloud.firestore {
         organizationUserForClinic(organizationId, clinicId)
       );
     }
-
 
     // ============================================================
     // APPOINTMENTS
@@ -556,10 +545,8 @@ service cloud.firestore {
         (ownsOrganization(organizationId) || isAdmin());
     }
 
-
     // ============================================================
     // DEFAULT DENY
-    // Anything not explicitly allowed above remains denied.
     // ============================================================
 
     match /{document=**} {
