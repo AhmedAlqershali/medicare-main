@@ -1,4 +1,4 @@
-enum AppointmentEntityStatus { upcoming, completed, cancelled }
+enum AppointmentEntityStatus { upcoming, previous, completed, cancelled }
 
 class AppointmentEntity {
   const AppointmentEntity({

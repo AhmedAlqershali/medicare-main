@@ -12,7 +12,7 @@ class _AppointmentTabs extends StatelessWidget {
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(color: colors.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: colors.outlineVariant)),
         child: Row(children: [
-          for (final item in const [(AppointmentStatus.upcoming, 'القادمة'), (AppointmentStatus.completed, 'المكتملة'), (AppointmentStatus.cancelled, 'الملغاة')])
+          for (final item in const [(AppointmentStatus.upcoming, 'القادمة'), (AppointmentStatus.previous, 'السجل'), (AppointmentStatus.completed, 'المكتملة'), (AppointmentStatus.cancelled, 'الملغاة')])
             Expanded(child: GestureDetector(
               onTap: () => onChanged(item.$1),
               child: AnimatedContainer(duration: const Duration(milliseconds: 180), padding: const EdgeInsets.symmetric(vertical: 11), decoration: BoxDecoration(color: selected == item.$1 ? colors.primary : Colors.transparent, borderRadius: BorderRadius.circular(10)), child: Text(item.$2, textAlign: TextAlign.center, style: TextStyle(color: selected == item.$1 ? colors.onPrimary : colors.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w700))),

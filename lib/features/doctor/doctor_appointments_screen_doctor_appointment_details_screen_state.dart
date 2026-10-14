@@ -94,8 +94,16 @@ class _DoctorAppointmentDetailsScreenState extends State<DoctorAppointmentDetail
         ),
       );
       if (confirmed != true || !mounted) return;
+      final selectedDateTime = parseAppointmentDateTime(selection['date'], selection['time']);
+      if (selectedDateTime == null || !selectedDateTime.isAfter(DateTime.now())) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('اختر تاريخًا ووقتًا قادمين.')));
+        return;
+      }
       final appointments = await FirestoreAppointmentRepository.instance.fetchAppointmentsForDoctor(organizationId: organizationId, doctorId: doctorId);
-      final conflict = appointments.any((appointment) => appointment['id'] != widget.appointment.id && appointment['date'] == selection['date'] && appointment['time'] == selection['time'] && appointment['status'] != 'cancelled');
+      final conflict = appointments.any((appointment) {
+        if (appointment['id'] == widget.appointment.id || appointment['status'] == 'cancelled') return false;
+        return parseAppointmentDateTime(appointment['date'], appointment['time']) == selectedDateTime;
+      });
       if (conflict) {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('هذا الوقت محجوز للطبيب بالفعل.')));
         return;

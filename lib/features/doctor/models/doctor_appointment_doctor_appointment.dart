@@ -18,7 +18,7 @@ class DoctorAppointment {
   final String notes;
   final Color avatarColor;
 
-  String get statusLabel => switch (status) { DoctorAppointmentFilter.today => 'اليوم', DoctorAppointmentFilter.upcoming => 'قادم', DoctorAppointmentFilter.completed => 'مكتمل', DoctorAppointmentFilter.cancelled => 'ملغي' };
-  Color get statusColor => switch (status) { DoctorAppointmentFilter.today => AppColors.primary, DoctorAppointmentFilter.upcoming => AppColors.primary, DoctorAppointmentFilter.completed => AppColors.success, DoctorAppointmentFilter.cancelled => AppColors.muted };
+  String get statusLabel => switch (status) { DoctorAppointmentFilter.today => 'اليوم', DoctorAppointmentFilter.upcoming => 'قادم', DoctorAppointmentFilter.previous => 'سابق', DoctorAppointmentFilter.completed => 'مكتمل', DoctorAppointmentFilter.cancelled => 'ملغي' };
+  Color get statusColor => switch (status) { DoctorAppointmentFilter.today => AppColors.primary, DoctorAppointmentFilter.upcoming => AppColors.primary, DoctorAppointmentFilter.previous => AppColors.muted, DoctorAppointmentFilter.completed => AppColors.success, DoctorAppointmentFilter.cancelled => AppColors.muted };
   DoctorAppointment copyWith({DoctorAppointmentFilter? status, String? date, String? time}) => DoctorAppointment(id: id, organizationId: organizationId, doctorId: doctorId, patientId: patientId, clinicId: clinicId, patientName: patientName, patientInitials: patientInitials, age: age, gender: gender, date: date ?? this.date, time: time ?? this.time, type: type, status: status ?? this.status, notes: notes, avatarColor: avatarColor);
 }

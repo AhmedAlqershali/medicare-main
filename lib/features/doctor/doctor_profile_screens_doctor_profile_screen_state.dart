@@ -113,7 +113,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                 AppCard(
                   child: Row(
                     children: [
-                      const AppAvatar(initials: 'أ ح', size: 72, backgroundColor: AppColors.sky),
+                      AppAvatar(initials: '', name: _profile.name, size: 72, backgroundColor: AppColors.sky),
                       const SizedBox(width: AppSpacing.md),
                       Expanded(
                         child: Column(

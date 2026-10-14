@@ -34,9 +34,14 @@ class FirestoreAppointmentRepository {
     final snapshot = await _service.appointmentCollection(organizationId)
         .where('organizationId', isEqualTo: organizationId)
         .where('patientId', isEqualTo: patientId)
-        .where('patientUid', isEqualTo: patientUid)
         .get();
-    return snapshot.docs.map((document) => {...document.data(), 'id': document.id}).toList();
+    return snapshot.docs
+      .map((document) => {...document.data(), 'id': document.id})
+      .where((appointment) =>
+        appointment['organizationId'] == organizationId &&
+        appointment['patientId'] == patientId &&
+        (appointment['patientUid'] == null || appointment['patientUid'] == patientUid))
+      .toList();
   }
 
   Future<List<Map<String, dynamic>>> fetchAppointmentsForDoctor({required String organizationId, required String doctorId}) async {

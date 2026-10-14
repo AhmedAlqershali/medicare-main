@@ -7,7 +7,7 @@ class _ProfileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AppCard(child: Column(children: [
-        const AppAvatar(initials: 'س أ', size: 82, backgroundColor: AppColors.mint),
+        AppAvatar(initials: '', name: patient.name, size: 82, backgroundColor: AppColors.mint),
         const SizedBox(height: AppSpacing.md),
         Text(patient.name, style: Theme.of(context).textTheme.headlineSmall, textAlign: TextAlign.center),
         const SizedBox(height: AppSpacing.xs),

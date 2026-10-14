@@ -20,6 +20,7 @@ class _FilterTabs extends StatelessWidget {
             for (final item in const [
               (DoctorAppointmentFilter.today, 'اليوم'),
               (DoctorAppointmentFilter.upcoming, 'القادمة'),
+              (DoctorAppointmentFilter.previous, 'السجل'),
               (DoctorAppointmentFilter.completed, 'المكتملة'),
               (DoctorAppointmentFilter.cancelled, 'الملغاة'),
             ])

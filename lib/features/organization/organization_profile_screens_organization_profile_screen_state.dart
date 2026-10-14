@@ -57,7 +57,7 @@ class _OrganizationProfileScreenState extends State<OrganizationProfileScreen> {
               if (_error != null) Text(_error!, style: const TextStyle(color: Color(0xFFC84C4C), fontWeight: FontWeight.w700)),
               AppCard(
                 child: Row(children: [
-                  const AppAvatar(initials: 'م م', size: 72, backgroundColor: AppColors.sky),
+                  AppAvatar(initials: '', name: _profile.name, size: 72, backgroundColor: AppColors.sky),
                   const SizedBox(width: AppSpacing.md),
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(_profile.name, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 18)),

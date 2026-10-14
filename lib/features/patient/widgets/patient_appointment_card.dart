@@ -20,7 +20,7 @@ class PatientAppointmentCard extends StatelessWidget {
             decoration: const BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
             child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
               Text(appointment.date, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.w700)),
-              StatusBadge(label: appointment.status == AppointmentEntityStatus.cancelled ? 'ملغي' : appointment.status == AppointmentEntityStatus.completed ? 'مكتمل' : 'قادم', color: Colors.white),
+              StatusBadge(label: appointment.status == AppointmentEntityStatus.cancelled ? 'ملغي' : appointment.status == AppointmentEntityStatus.completed ? 'مكتمل' : appointment.status == AppointmentEntityStatus.previous ? 'سابق' : 'قادم', color: Colors.white),
             ]),
           ),
           Padding(

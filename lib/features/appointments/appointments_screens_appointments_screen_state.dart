@@ -45,6 +45,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
 
   AppointmentStatus _toUiStatus(AppointmentEntityStatus status) => switch (status) {
         AppointmentEntityStatus.upcoming => AppointmentStatus.upcoming,
+        AppointmentEntityStatus.previous => AppointmentStatus.previous,
         AppointmentEntityStatus.completed => AppointmentStatus.completed,
         AppointmentEntityStatus.cancelled => AppointmentStatus.cancelled,
       };

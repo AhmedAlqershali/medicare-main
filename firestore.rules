@@ -297,7 +297,12 @@ service cloud.firestore {
         ownsOrganization(organizationId) ||
         isOrganizationMember(organizationId) ||
         (resource.data.doctorId != null && isDoctorOfOrganization(organizationId, resource.data.doctorId)) ||
-        (resource.data.get('patientUid', null) == request.auth.uid && exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)) && get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.firebaseUid == request.auth.uid && get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.organizationId == organizationId) ||
+        (resource.data.patientId is string &&
+         (resource.data.get('patientUid', null) == null || resource.data.get('patientUid', null) == request.auth.uid) &&
+         exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)) &&
+         get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.firebaseUid == request.auth.uid &&
+         get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.organizationId == organizationId &&
+         get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.doctorId == resource.data.doctorId) ||
         (resource.data.patientId is string &&
          exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)) &&
          get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.email == request.auth.token.email &&
