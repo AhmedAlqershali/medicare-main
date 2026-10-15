@@ -298,9 +298,7 @@ fontWeight: FontWeight.bold,
 (note) {
 final date = note.createdAt;
 
-final dateText = date == null
-? ''
-    : '${date.day}/${date.month}/${date.year}';
+final dateText = '${date.day}/${date.month}/${date.year}';
 
 return Padding(
 padding: const EdgeInsets.only(
