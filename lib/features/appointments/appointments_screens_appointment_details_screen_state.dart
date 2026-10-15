@@ -3,6 +3,8 @@ part of 'appointments_screens.dart';
   switch (status) {
     case AppointmentStatus.upcoming:
       return (label: 'قادم', color: AppColors.primary);
+    case AppointmentStatus.previous:
+      return (label: 'سابق', color: AppColors.muted);
     case AppointmentStatus.completed:
       return (label: 'مكتمل', color: AppColors.success);
     case AppointmentStatus.cancelled:

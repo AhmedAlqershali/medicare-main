@@ -30,7 +30,7 @@ class _DoctorListCard extends StatelessWidget {
           Row(children: [
             const Icon(Icons.star_rounded, color: AppColors.warning, size: 17),
             const SizedBox(width: 4),
-            Text(doctor.rating, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.ink, fontWeight: FontWeight.w700)),
+            Text(doctor.rating, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.w700)),
             const Spacer(),
             const Icon(Icons.circle, color: AppColors.success, size: 7),
             const SizedBox(width: 4),

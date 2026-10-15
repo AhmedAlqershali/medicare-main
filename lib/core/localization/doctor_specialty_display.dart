@@ -1,5 +1,18 @@
 import 'package:flutter/material.dart';
 
+const doctorSpecialties = <String>[
+  'طب الأسرة',
+  'طب الأطفال',
+  'النساء والتوليد',
+  'الأمراض الباطنية',
+  'الجراحة العامة',
+  'جراحة العظام',
+  'طب القلب والأوعية الدموية',
+  'طب الطوارئ',
+  'طب العيون',
+  'طب الأسنان',
+];
+
 const Map<String, String> _arabicSpecialties = {
   'dermatology': 'الأمراض الجلدية',
   'cardiology': 'أمراض القلب',
@@ -14,6 +27,16 @@ const Map<String, String> _arabicSpecialties = {
   'anesthesia': 'التخدير',
   'urology': 'أمراض المسالك',
   'endocrinology': 'أمراض الغدد',
+  'طب الأسرة': 'طب الأسرة',
+  'طب الأطفال': 'طب الأطفال',
+  'النساء والتوليد': 'النساء والتوليد',
+  'الأمراض الباطنية': 'الأمراض الباطنية',
+  'الجراحة العامة': 'الجراحة العامة',
+  'جراحة العظام': 'جراحة العظام',
+  'طب القلب والأوعية الدموية': 'طب القلب والأوعية الدموية',
+  'طب الطوارئ': 'طب الطوارئ',
+  'طب العيون': 'طب العيون',
+  'طب الأسنان': 'طب الأسنان',
 };
 
 const Map<String, String> _englishSpecialties = {
@@ -30,6 +53,16 @@ const Map<String, String> _englishSpecialties = {
   'anesthesia': 'Anesthesia',
   'urology': 'Urology',
   'endocrinology': 'Endocrinology',
+  'طب الأسرة': 'Family Medicine',
+  'طب الأطفال': 'Pediatrics',
+  'النساء والتوليد': 'Obstetrics and Gynecology',
+  'الأمراض الباطنية': 'Internal Medicine',
+  'الجراحة العامة': 'General Surgery',
+  'جراحة العظام': 'Orthopedics',
+  'طب القلب والأوعية الدموية': 'Cardiology',
+  'طب الطوارئ': 'Emergency Medicine',
+  'طب العيون': 'Ophthalmology',
+  'طب الأسنان': 'Dentistry',
 };
 
 String displayDoctorSpecialty(BuildContext context, String specialty) {

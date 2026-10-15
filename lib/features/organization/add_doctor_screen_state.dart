@@ -12,78 +12,12 @@ import 'add_doctor_screen.dart';
 class AddDoctorScreenState extends State<AddDoctorScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
-
-  String? _selectedSpecialty;
-
+  final _specialtyController = TextEditingController();
   String? _error;
   bool _success = false;
   bool _loading = false;
-
   List<Map<String, dynamic>> _clinics = const [];
   String? _selectedClinicId;
-
-  static const List<Map<String, String>> _specialties = [
-    {
-      'value': 'general_medicine',
-      'label': 'الطب العام',
-    },
-    {
-      'value': 'family_medicine',
-      'label': 'طب الأسرة',
-    },
-    {
-      'value': 'internal_medicine',
-      'label': 'الطب الباطني',
-    },
-    {
-      'value': 'pediatrics',
-      'label': 'طب الأطفال',
-    },
-    {
-      'value': 'obstetrics_gynecology',
-      'label': 'النساء والتوليد',
-    },
-    {
-      'value': 'cardiology',
-      'label': 'أمراض القلب',
-    },
-    {
-      'value': 'dermatology',
-      'label': 'الأمراض الجلدية',
-    },
-    {
-      'value': 'ophthalmology',
-      'label': 'طب العيون',
-    },
-    {
-      'value': 'ent',
-      'label': 'الأنف والأذن والحنجرة',
-    },
-    {
-      'value': 'orthopedics',
-      'label': 'جراحة العظام',
-    },
-    {
-      'value': 'dentistry',
-      'label': 'طب الأسنان',
-    },
-    {
-      'value': 'urology',
-      'label': 'المسالك البولية',
-    },
-    {
-      'value': 'neurology',
-      'label': 'طب الأعصاب',
-    },
-    {
-      'value': 'psychiatry',
-      'label': 'الطب النفسي',
-    },
-    {
-      'value': 'physiotherapy',
-      'label': 'العلاج الطبيعي والتأهيل',
-    },
-  ];
 
   @override
   void initState() {
@@ -92,26 +26,13 @@ class AddDoctorScreenState extends State<AddDoctorScreen> {
   }
 
   Future<void> _loadClinics() async {
-    final organizationId =
-        FirebaseAuthRepository.instance.session.organizationId;
-
+    final organizationId = FirebaseAuthRepository.instance.session.organizationId;
     if (organizationId == null || organizationId.isEmpty) return;
-
     try {
-      final clinics = await FirestoreClinicRepository.instance
-          .fetchClinicsForOrganization(organizationId);
-
-      if (mounted) {
-        setState(() {
-          _clinics = clinics;
-        });
-      }
+      final clinics = await FirestoreClinicRepository.instance.fetchClinicsForOrganization(organizationId);
+      if (mounted) setState(() => _clinics = clinics);
     } catch (error) {
-      if (mounted) {
-        setState(() {
-          _error = error.toString();
-        });
-      }
+      if (mounted) setState(() => _error = error.toString());
     }
   }
 
@@ -119,231 +40,46 @@ class AddDoctorScreenState extends State<AddDoctorScreen> {
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
+    _specialtyController.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
-    final name = _nameController.text.trim();
     final email = _emailController.text.trim();
-
-    if (name.isEmpty ||
-        !_isEmail(email) ||
-        _selectedSpecialty == null ||
-        _selectedClinicId == null) {
-      setState(() {
-        _error = 'أدخل بيانات الطبيب واختر التخصص والعيادة وبريداً إلكترونياً صحيحاً.';
-      });
+    if (_nameController.text.trim().isEmpty || !_isEmail(email) || _specialtyController.text.trim().isEmpty || _selectedClinicId == null) {
+      setState(() => _error = 'أدخل بيانات الطبيب واختر العيادة وبريداً إلكترونياً صحيحاً.');
       return;
     }
-
-    final organizationId =
-        FirebaseAuthRepository.instance.session.organizationId;
-
+    final organizationId = FirebaseAuthRepository.instance.session.organizationId;
     final invitedBy = FirebaseAuth.instance.currentUser?.uid;
-
-    if (organizationId == null ||
-        organizationId.isEmpty ||
-        invitedBy == null ||
-        invitedBy.isEmpty) {
-      setState(() {
-        _error = 'لا توجد مؤسسة نشطة مرتبطة بالجلسة الحالية.';
-      });
+    if (organizationId == null || organizationId.isEmpty || invitedBy == null || invitedBy.isEmpty) {
+      setState(() => _error = 'لا توجد مؤسسة نشطة مرتبطة بالجلسة الحالية.');
       return;
     }
-
     setState(() {
       _loading = true;
       _error = null;
     });
-
     try {
-      final clinic = _clinics.firstWhere(
-            (item) => item['id'] == _selectedClinicId,
-      );
-
-      await FirestoreDoctorRepository.instance.inviteDoctor(
-        organizationId: organizationId,
-        name: name,
-        email: email,
-        specialty: _selectedSpecialty!,
-        invitedBy: invitedBy,
-        clinicId: _selectedClinicId,
-        clinicName: clinic['name'] as String?,
-      );
-
-      if (mounted) {
-        setState(() {
-          _success = true;
-        });
-      }
+      final clinic = _clinics.firstWhere((item) => item['id'] == _selectedClinicId);
+      await FirestoreDoctorRepository.instance.inviteDoctor(organizationId: organizationId, name: _nameController.text.trim(), email: email, specialty: _specialtyController.text.trim(), invitedBy: invitedBy, clinicId: _selectedClinicId, clinicName: clinic['name'] as String?);
+      if (mounted) setState(() => _success = true);
     } on StateError catch (error) {
-      if (mounted) {
-        setState(() {
-          _error = error.message;
-        });
-      }
+      if (mounted) setState(() => _error = error.message);
     } catch (error) {
-      if (mounted) {
-        setState(() {
-          _error = error.toString();
-        });
-      }
+      if (mounted) setState(() => _error = error.toString());
     } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-        });
-      }
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  bool _isEmail(String value) {
-    return RegExp(
-      r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
-    ).hasMatch(value);
-  }
+  bool _isEmail(String value) => RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value);
 
   @override
   Widget build(BuildContext context) {
     if (_success) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('إضافة طبيب'),
-        ),
-        body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(
-                  Icons.mark_email_read_outlined,
-                  color: AppColors.success,
-                  size: 64,
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                Text(
-                  'تمت إضافة الطبيب وحفظ الدعوة.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  'يمكن للطبيب تفعيل حسابه باستخدام البريد الإلكتروني المدعو.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: AppSpacing.xl),
-                PrimaryButton(
-                  label: 'العودة إلى الأطباء',
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
+      return Scaffold(appBar: AppBar(title: const Text('إضافة طبيب')), body: SafeArea(child: Padding(padding: const EdgeInsets.all(AppSpacing.lg), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.mark_email_read_outlined, color: AppColors.success, size: 64), const SizedBox(height: AppSpacing.lg), Text('تمت إضافة الطبيب وحفظ الدعوة.', textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium), const SizedBox(height: AppSpacing.sm), Text('يمكن للطبيب تفعيل حسابه باستخدام البريد الإلكتروني المدعو.', textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium), const SizedBox(height: AppSpacing.xl), PrimaryButton(label: 'العودة إلى الأطباء', onPressed: () => Navigator.of(context).pop())]))));
     }
-
-    return AuthScaffold(
-      showBack: true,
-      title: 'إضافة طبيب',
-      subtitle: 'أضف الطبيب إلى مؤسستك وأنشئ دعوة',
-      children: [
-        CustomTextField(
-          label: 'اسم الطبيب',
-          prefixIcon: Icons.badge_outlined,
-          controller: _nameController,
-        ),
-
-        const SizedBox(height: AppSpacing.md),
-
-        CustomTextField(
-          label: 'البريد الإلكتروني الشخصي',
-          prefixIcon: Icons.email_outlined,
-          controller: _emailController,
-          keyboardType: TextInputType.emailAddress,
-        ),
-
-        const SizedBox(height: AppSpacing.md),
-
-        DropdownButtonFormField<String>(
-          initialValue: _selectedSpecialty,
-          decoration: const InputDecoration(
-            labelText: 'التخصص',
-            prefixIcon: Icon(
-              Icons.medical_information_outlined,
-            ),
-          ),
-          hint: const Text('اختر تخصص الطبيب'),
-          items: _specialties
-              .map(
-                (specialty) => DropdownMenuItem<String>(
-              value: specialty['value'],
-              child: Text(specialty['label']!),
-            ),
-          )
-              .toList(),
-          onChanged: (value) {
-            setState(() {
-              _selectedSpecialty = value;
-            });
-          },
-        ),
-
-        const SizedBox(height: AppSpacing.md),
-
-        InputDecorator(
-          decoration: const InputDecoration(
-            labelText: 'العيادة',
-            prefixIcon: Icon(
-              Icons.local_hospital_outlined,
-            ),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              isExpanded: true,
-              value: _selectedClinicId,
-              hint: const Text('اختر العيادة'),
-              items: _clinics
-                  .map(
-                    (clinic) => DropdownMenuItem<String>(
-                  value: clinic['id'] as String?,
-                  child: Text(
-                    clinic['name'] as String? ?? '',
-                  ),
-                ),
-              )
-                  .toList(),
-              onChanged: (value) {
-                setState(() {
-                  _selectedClinicId = value;
-                });
-              },
-            ),
-          ),
-        ),
-
-        if (_error != null) ...[
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            _error!,
-            style: const TextStyle(
-              color: Color(0xFFC84C4C),
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-
-        const SizedBox(height: AppSpacing.xl),
-
-        PrimaryButton(
-          label: 'إضافة الطبيب',
-          icon: Icons.person_add_alt_1_outlined,
-          onPressed: _submit,
-          isLoading: _loading,
-        ),
-      ],
-    );
+    return AuthScaffold(showBack: true, title: 'إضافة طبيب', subtitle: 'أضف الطبيب إلى مؤسستك وأنشئ دعوة', children: [CustomTextField(label: 'اسم الطبيب', prefixIcon: Icons.badge_outlined, controller: _nameController), const SizedBox(height: AppSpacing.md), CustomTextField(label: 'البريد الإلكتروني الشخصي', prefixIcon: Icons.email_outlined, controller: _emailController, keyboardType: TextInputType.emailAddress), const SizedBox(height: AppSpacing.md), CustomTextField(label: 'التخصص', prefixIcon: Icons.medical_information_outlined, controller: _specialtyController), const SizedBox(height: AppSpacing.md), InputDecorator(decoration: const InputDecoration(labelText: 'العيادة', prefixIcon: Icon(Icons.local_hospital_outlined)), child: DropdownButtonHideUnderline(child: DropdownButton<String>(isExpanded: true, value: _selectedClinicId, hint: const Text('اختر العيادة'), items: _clinics.map((clinic) => DropdownMenuItem<String>(value: clinic['id'] as String?, child: Text(clinic['name'] as String? ?? ''))).toList(), onChanged: (value) => setState(() => _selectedClinicId = value)))), if (_error != null) ...[const SizedBox(height: AppSpacing.sm), Text(_error!, style: const TextStyle(color: Color(0xFFC84C4C), fontWeight: FontWeight.w700))], const SizedBox(height: AppSpacing.xl), PrimaryButton(label: 'إضافة الطبيب', icon: Icons.person_add_alt_1_outlined, onPressed: _submit, isLoading: _loading)]);
   }
 }

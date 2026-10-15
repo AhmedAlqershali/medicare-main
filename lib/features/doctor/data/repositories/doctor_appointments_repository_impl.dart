@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/auth/services/firebase_auth_repository.dart';
 import '../../../../core/firestore/repositories/firestore_appointment_repository.dart';
+import '../../../../core/firestore/appointment_date_time.dart';
 import '../../domain/repositories/doctor_appointments_repository.dart';
 import '../../models/doctor_appointment.dart';
 
@@ -31,7 +32,7 @@ class DoctorAppointmentsRepositoryImpl
       doctorId: doctorId,
     );
 
-    return appointments.map(_fromMap).toList();
+    return _sortAppointments(appointments.map(_fromMap).toList());
   }
 
   Stream<List<DoctorAppointment>> watchDoctorAppointments() {
@@ -65,14 +66,14 @@ class DoctorAppointmentsRepositoryImpl
         .snapshots()
         .map(
           (snapshot) {
-        return snapshot.docs
+        return _sortAppointments(snapshot.docs
             .map(
               (document) => _fromMap({
             ...document.data(),
             'id': document.id,
           }),
         )
-            .toList();
+            .toList());
       },
     );
   }
@@ -96,6 +97,7 @@ class DoctorAppointmentsRepositoryImpl
       status: _statusFromMap(
         appointment['status'],
         rawDate,
+        appointment['time'],
       ),
       notes: _asString(appointment['notes']),
       avatarColor: Colors.transparent,
@@ -116,7 +118,8 @@ class DoctorAppointmentsRepositoryImpl
     }
 
     if (date is String) {
-      return date;
+      final parsed = _parseDate(date);
+      return parsed == null ? date : _formatDateTime(parsed);
     }
 
     return '';
@@ -129,10 +132,7 @@ class DoctorAppointmentsRepositoryImpl
     return '$day/$month/${date.year}';
   }
 
-  DoctorAppointmentFilter _statusFromMap(
-      Object? value,
-      Object? date,
-      ) {
+  DoctorAppointmentFilter _statusFromMap(Object? value, Object? date, Object? time) {
     if (value == 'completed') {
       return DoctorAppointmentFilter.completed;
     }
@@ -141,15 +141,30 @@ class DoctorAppointmentsRepositoryImpl
       return DoctorAppointmentFilter.cancelled;
     }
 
-    if (value == 'today') {
-      return DoctorAppointmentFilter.today;
+    final appointmentDateTime = parseAppointmentDateTime(date, time);
+    if (appointmentDateTime != null && appointmentDateTime.isBefore(DateTime.now())) {
+      return DoctorAppointmentFilter.previous;
     }
 
-    if (_isToday(date)) {
+    if (_isToday(date) || (value == 'today' && appointmentDateTime == null)) {
       return DoctorAppointmentFilter.today;
     }
 
     return DoctorAppointmentFilter.upcoming;
+  }
+
+  List<DoctorAppointment> _sortAppointments(List<DoctorAppointment> appointments) {
+    appointments.sort((first, second) {
+      final firstDate = parseAppointmentDateTime(first.date, first.time);
+      final secondDate = parseAppointmentDateTime(second.date, second.time);
+      if (firstDate == null) return secondDate == null ? 0 : 1;
+      if (secondDate == null) return -1;
+      if (first.status == DoctorAppointmentFilter.previous && second.status == DoctorAppointmentFilter.previous) {
+        return secondDate.compareTo(firstDate);
+      }
+      return firstDate.compareTo(secondDate);
+    });
+    return appointments;
   }
 
   bool _isToday(Object? date) {

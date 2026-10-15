@@ -21,7 +21,7 @@ class _DetailRow extends StatelessWidget {
           Expanded(
             child: Text(
               value,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: valueColor ?? AppColors.ink, fontWeight: FontWeight.w700),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: valueColor ?? Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.w700),
             ),
           ),
         ],

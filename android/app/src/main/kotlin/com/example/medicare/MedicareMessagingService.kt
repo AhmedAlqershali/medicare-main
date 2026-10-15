@@ -8,11 +8,11 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import android.provider.Settings
-import android.util.Random
-import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import io.flutter.plugins.firebase.messaging.FlutterFirebaseMessagingService
+import kotlin.random.Random
 
-class MedicareMessagingService : FirebaseMessagingService() {
+class MedicareMessagingService : FlutterFirebaseMessagingService() {
     override fun onCreate() {
         super.onCreate()
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -32,13 +32,14 @@ class MedicareMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
+        super.onMessageReceived(remoteMessage)
         val title = remoteMessage.notification?.title ?: remoteMessage.data["title"]
         val body = remoteMessage.notification?.body ?: remoteMessage.data["body"]
         if (title.isNullOrBlank() && body.isNullOrBlank()) return
 
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            putExtra("notification_message", remoteMessage.data)
+            putExtra("notification_message", HashMap(remoteMessage.data))
         }
         val pendingIntent = PendingIntent.getActivity(
             this,
@@ -47,10 +48,12 @@ class MedicareMessagingService : FirebaseMessagingService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val notification = android.app.Notification.Builder(
-            this,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) NOTIFICATION_CHANNEL_ID else "default",
-        )
+        val notificationBuilder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            android.app.Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
+        } else {
+            android.app.Notification.Builder(this)
+        }
+        val notification = notificationBuilder
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(body)

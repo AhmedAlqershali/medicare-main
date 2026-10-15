@@ -40,7 +40,7 @@ class AppAboutScreen extends StatelessWidget {
               _AboutItem(icon: Icons.people_alt_outlined, title: 'إدارة المرضى', description: 'راجع معلومات المريض وملاحظات المتابعة.'),
               _AboutItem(icon: Icons.notifications_active_outlined, title: 'الإشعارات الفورية', description: 'استقبل تحديثات المواعيد والرسائل الجديدة.'),
               const SizedBox(height: AppSpacing.lg),
-              Text('الإصدار 1.0.0', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.muted)),
+              Text('الإصدار 1.0.0', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
             ],
           ),
         ),

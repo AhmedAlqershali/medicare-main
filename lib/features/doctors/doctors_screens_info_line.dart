@@ -11,6 +11,6 @@ class _InfoLine extends StatelessWidget {
         Container(width: 36, height: 36, decoration: BoxDecoration(color: AppColors.mint, borderRadius: BorderRadius.circular(11)), child: Icon(icon, color: AppColors.primary, size: 19)),
         const SizedBox(width: AppSpacing.sm),
         Text('$title: ', style: Theme.of(context).textTheme.bodyMedium),
-        Expanded(child: Text(value, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.ink, fontWeight: FontWeight.w600))),
+        Expanded(child: Text(value, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.w600))),
       ]);
 }

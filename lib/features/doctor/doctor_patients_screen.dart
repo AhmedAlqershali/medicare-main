@@ -5,6 +5,8 @@ import '../../core/firestore/repositories/firestore_clinic_repository.dart';
 import '../../core/firestore/repositories/firestore_doctor_repository.dart';
 import '../../core/firestore/repositories/firestore_appointment_repository.dart';
 import '../../core/firestore/repositories/firestore_patient_repository.dart';
+import '../../core/firestore/repositories/firestore_organization_repository.dart';
+import '../../core/firestore/appointment_date_time.dart';
 import '../../core/auth/models/patient.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/medicare_widgets.dart';

@@ -9,7 +9,7 @@ class ErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        const Icon(Icons.error_outline, color: Color(0xFFC84C4C), size: 40),
+        Icon(Icons.error_outline, color: Theme.of(context).colorScheme.error, size: 40),
         const SizedBox(height: AppSpacing.md),
         Text(message, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
         if (onRetry != null) TextButton(onPressed: onRetry, child: const Text('حاول مرة أخرى')),

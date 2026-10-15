@@ -9,6 +9,13 @@ class _OrganizationDoctorFormScreenState extends State<OrganizationDoctorFormScr
   String? _selectedClinicId;
   String? _clinicError;
 
+  List<String> get _specialtyOptions {
+    final current = _specialtyController.text.trim();
+    return current.isNotEmpty && !doctorSpecialties.contains(current)
+        ? [current, ...doctorSpecialties]
+        : doctorSpecialties;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -66,7 +73,7 @@ class _OrganizationDoctorFormScreenState extends State<OrganizationDoctorFormScr
             child: Column(children: [
               CustomTextField(label: 'اسم الطبيب', prefixIcon: Icons.badge_outlined, controller: _nameController),
               const SizedBox(height: AppSpacing.md),
-              CustomTextField(label: 'التخصص', prefixIcon: Icons.medical_information_outlined, controller: _specialtyController),
+              DropdownButtonFormField<String>(value: _specialtyOptions.contains(_specialtyController.text) ? _specialtyController.text : null, decoration: const InputDecoration(labelText: 'التخصص', prefixIcon: Icon(Icons.medical_information_outlined)), items: _specialtyOptions.map((specialty) => DropdownMenuItem(value: specialty, child: Text(specialty))).toList(), onChanged: (value) => setState(() => _specialtyController.text = value ?? '')),
               const SizedBox(height: AppSpacing.md),
               InputDecorator(decoration: InputDecoration(labelText: 'العيادة', prefixIcon: const Icon(Icons.local_hospital_outlined), errorText: _clinicError), child: DropdownButtonHideUnderline(child: DropdownButton<String>(isExpanded: true, value: _selectedClinicId, hint: const Text('اختر العيادة'), items: _clinics.map((clinic) => DropdownMenuItem<String>(value: clinic['id'] as String?, child: Text(clinic['name'] as String? ?? ''))).toList(), onChanged: (value) => setState(() => _selectedClinicId = value)))),
               const SizedBox(height: AppSpacing.md),

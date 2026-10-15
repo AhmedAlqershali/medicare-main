@@ -8,5 +8,32 @@ class _AppointmentTypeOption extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => InkWell(onTap: onTap, borderRadius: BorderRadius.circular(14), child: Container(padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.md), decoration: BoxDecoration(color: selected ? AppColors.mint : AppColors.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: selected ? AppColors.primary : AppColors.border)), child: Row(children: [Icon(icon, color: selected ? AppColors.primary : AppColors.muted, size: 21), const SizedBox(width: AppSpacing.xs), Expanded(child: Text(label, style: TextStyle(color: selected ? AppColors.primaryDark : AppColors.ink, fontSize: 12, fontWeight: FontWeight.w700))), Icon(selected ? Icons.radio_button_checked : Icons.radio_button_off, color: selected ? AppColors.primary : AppColors.muted, size: 19)])));
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.md),
+        decoration: BoxDecoration(
+          color: selected ? colors.primaryContainer : colors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: selected ? colors.primary : colors.outlineVariant),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: selected ? colors.primary : colors.onSurfaceVariant, size: 21),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(color: selected ? colors.onPrimaryContainer : colors.onSurface, fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+            ),
+            Icon(selected ? Icons.radio_button_checked : Icons.radio_button_off, color: selected ? colors.primary : colors.onSurfaceVariant, size: 19),
+          ],
+        ),
+      ),
+    );
+  }
 }

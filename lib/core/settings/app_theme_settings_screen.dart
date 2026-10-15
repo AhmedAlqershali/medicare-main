@@ -17,9 +17,9 @@ class _AppThemeSettingsScreenState extends State<AppThemeSettingsScreen> {
   AppThemeMode _selectedMode = AppThemeMode.system;
 
   @override
-  void initState() {
-    super.initState();
-    _selectedMode = AppThemeMode.fromValue(AppThemeScope.of(context)?.value.name);
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _selectedMode = AppThemeMode.fromMaterialMode(AppThemeScope.of(context)?.value ?? ThemeMode.system);
   }
 
   @override
@@ -58,11 +58,16 @@ class _AppThemeSettingsScreenState extends State<AppThemeSettingsScreen> {
     final notifier = AppThemeScope.of(context);
     if (notifier == null) return;
 
-    setState(() => _selectedMode = mode);
-    notifier.value = mode.materialMode;
-
     final uid = FirebaseAuthRepository.instance.currentUser?.id;
-    await AppThemeService(FirestoreService()).saveThemeMode(uid, mode);
+    try {
+      await AppThemeService(FirestoreService()).saveThemeMode(uid, mode);
+      if (!mounted) return;
+      setState(() => _selectedMode = mode);
+      notifier.value = mode.materialMode;
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر حفظ المظهر: $error')));
+    }
   }
 }
 

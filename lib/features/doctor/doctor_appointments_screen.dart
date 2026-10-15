@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/auth/services/firebase_auth_repository.dart';
 import '../../core/firestore/repositories/firestore_appointment_repository.dart';
+import '../../core/firestore/appointment_date_time.dart';
 import '../../core/firestore/repositories/firestore_doctor_repository.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/medicare_widgets.dart';

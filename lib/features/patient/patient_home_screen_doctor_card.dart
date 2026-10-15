@@ -20,7 +20,7 @@ class _DoctorCard extends StatelessWidget {
               Expanded(child: Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 14))),
             ]),
             const SizedBox(height: AppSpacing.sm),
-            Text(displayDoctorSpecialty(context, specialty), style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.ink, fontWeight: FontWeight.w600)),
+            Text(displayDoctorSpecialty(context, specialty), style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.w600)),
             const SizedBox(height: 2),
             Text(clinic, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyMedium),
             const Spacer(),
