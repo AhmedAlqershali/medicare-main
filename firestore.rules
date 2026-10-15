@@ -1,354 +1,591 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ============================================================
+    // AUTHENTICATION & HELPERS
+    // ============================================================
+
     function signedIn() {
       return request.auth != null;
     }
 
     function isAdmin() {
-      return signedIn() && request.auth.token.admin == true;
+      return signedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'admin'
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true;
     }
 
     function userProfile(uid) {
       return get(/databases/$(database)/documents/users/$(uid));
     }
 
-    function userRole(uid) {
-      return exists(/databases/$(database)/documents/users/$(uid))
-        ? userProfile(uid).data.role
+    function currentUserProfile() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? userProfile(request.auth.uid)
         : null;
     }
 
     function ownsOrganization(orgId) {
-      return signedIn() &&
-        exists(/databases/$(database)/documents/organizations/$(orgId)) &&
-        (get(/databases/$(database)/documents/organizations/$(orgId)).data.get('firebaseUid', null) == request.auth.uid ||
-         get(/databases/$(database)/documents/organizations/$(orgId)).data.get('ownerUid', null) == request.auth.uid);
+      return signedIn()
+        && exists(/databases/$(database)/documents/organizations/$(orgId))
+        && (
+          get(/databases/$(database)/documents/organizations/$(orgId)).data.get('firebaseUid', null) == request.auth.uid
+          || get(/databases/$(database)/documents/organizations/$(orgId)).data.get('ownerUid', null) == request.auth.uid
+        );
     }
 
     function isOrganizationMember(orgId) {
-      return signedIn() &&
-        currentUserProfile() != null &&
-        currentUserProfile().data.role == 'organization' &&
-        currentUserProfile().data.organizationId == orgId;
+      return currentUserProfile() != null
+        && currentUserProfile().data.role == 'organization'
+        && currentUserProfile().data.organizationId == orgId;
     }
 
-    function currentUserProfile() {
-      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        ? get(/databases/$(database)/documents/users/$(request.auth.uid))
-        : null;
+    function isPatientOfOrganization(orgId) {
+      return currentUserProfile() != null
+        && currentUserProfile().data.role == 'patient'
+        && currentUserProfile().data.organizationId == orgId;
+    }
+
+    function isCurrentDoctorForOrganization(orgId, doctorId) {
+      return currentUserProfile() != null
+        && currentUserProfile().data.role == 'doctor'
+        && currentUserProfile().data.organizationId == orgId
+        && currentUserProfile().data.doctorId == doctorId;
     }
 
     function organizationUserForClinic(orgId, clinicId) {
-      return currentUserProfile() != null &&
-        currentUserProfile().data.role == 'organization' &&
-        currentUserProfile().data.organizationId == orgId &&
-        (currentUserProfile().data.get('clinicId', null) == null || currentUserProfile().data.get('clinicId', null) == clinicId);
+      return isOrganizationMember(orgId)
+        && (
+          currentUserProfile().data.get('clinicId', null) == null
+          || currentUserProfile().data.get('clinicId', null) == clinicId
+        );
+    }
+
+    function patientDocument(orgId, patientId) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId));
     }
 
     function matchingOrganizationInvitation(orgId, invitationId) {
-      return invitationId is string &&
-        exists(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(invitationId)) &&
-        get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(invitationId)).data.get('recipientEmail', get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(invitationId)).data.email) == request.auth.token.email &&
-        get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(invitationId)).data.role == 'organization' &&
-        get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(invitationId)).data.status == 'pending' &&
-        (get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(invitationId)).data.get('expiresAt', null) == null || get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(invitationId)).data.expiresAt > request.time);
-    }
-
-    function isDoctorOfOrganization(orgId, doctorId) {
-      return signedIn() &&
-        exists(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)) &&
-        get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.firebaseUid == request.auth.uid &&
-        get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.organizationId == orgId;
+      return invitationId is string
+        && exists(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(invitationId))
+        && get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(invitationId)).data.get(
+          'recipientEmail',
+          get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(invitationId)).data.email
+        ) == request.auth.token.email
+        && get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(invitationId)).data.role == 'organization'
+        && get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(invitationId)).data.status == 'pending'
+        && (
+          get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(invitationId)).data.get('expiresAt', null) == null
+          || get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(invitationId)).data.expiresAt > request.time
+        );
     }
 
     function isPendingDoctorInvitation(orgId, doctorId) {
-      return signedIn() &&
-        exists(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(doctorId)) &&
-        get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(doctorId)).data.get('recipientEmail', get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(doctorId)).data.email) == request.auth.token.email &&
-        get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(doctorId)).data.role == 'doctor' &&
-        get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(doctorId)).data.doctorId == doctorId &&
-        get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(doctorId)).data.status == 'pending' &&
-        (get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(doctorId)).data.get('expiresAt', null) == null || get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(doctorId)).data.expiresAt > request.time);
+      return signedIn()
+        && exists(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(doctorId))
+        && get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(doctorId)).data.get(
+          'recipientEmail',
+          get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(doctorId)).data.email
+        ) == request.auth.token.email
+        && get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(doctorId)).data.role == 'doctor'
+        && get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(doctorId)).data.doctorId == doctorId
+        && get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(doctorId)).data.status == 'pending'
+        && (
+          get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(doctorId)).data.get('expiresAt', null) == null
+          || get(/databases/$(database)/documents/organizations/$(orgId)/invitations/$(doctorId)).data.expiresAt > request.time
+        );
+    }
+
+    function isDoctorOfOrganization(orgId, doctorId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId))
+        && get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.firebaseUid == request.auth.uid
+        && get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.organizationId == orgId;
     }
 
     function isDoctorPatientAccess(orgId, doctorId, patientId) {
-      return signedIn() &&
-        isDoctorOfOrganization(orgId, doctorId) &&
-        exists(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId)) &&
-        get(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId)).data.doctorId == doctorId &&
-        get(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId)).data.organizationId == orgId;
+      return signedIn()
+        && isDoctorOfOrganization(orgId, doctorId)
+        && exists(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId))
+        && patientDocument(orgId, patientId).data.doctorId == doctorId
+        && patientDocument(orgId, patientId).data.organizationId == orgId;
     }
 
-    match /users/{uid} {
-      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+    function patientEmailMatchesAuthenticatedUser(orgId, patientId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId))
+        && patientDocument(orgId, patientId).data.get('email', null) == request.auth.token.email
+        && patientDocument(orgId, patientId).data.organizationId == orgId;
+    }
 
-      allow create: if signedIn() &&
-        request.auth.uid == uid &&
-        request.resource.data.uid == uid &&
-        request.resource.data.role in ['patient', 'doctor', 'organization'] &&
-        (
-          (request.resource.data.role == 'organization' && (
-            matchingOrganizationInvitation(request.resource.data.organizationId, request.resource.data.get('invitationId', null)) ||
-            (exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)) &&
-             get(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)).data.firebaseUid == uid &&
-             get(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)).data.email == request.resource.data.email)
-          )) ||
-          (request.resource.data.role == 'doctor' &&
-           request.resource.data.doctorId is string &&
-           exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/doctors/$(request.resource.data.doctorId)) &&
-           get(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/doctors/$(request.resource.data.doctorId)).data.firebaseUid == uid &&
-           get(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/doctors/$(request.resource.data.doctorId)).data.organizationId == request.resource.data.organizationId &&
-           get(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/doctors/$(request.resource.data.doctorId)).data.email == request.resource.data.email) ||
-          (request.resource.data.role == 'patient' &&
-           request.resource.data.patientId is string &&
-           request.resource.data.doctorId is string &&
-           request.resource.data.organizationId is string &&
-           request.resource.data.email == request.auth.token.email &&
-           exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)) &&
-           getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.id == request.resource.data.patientId &&
-           getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.email == request.resource.data.email &&
-           getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.firebaseUid == uid &&
-           getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.accountActivated == true &&
-           getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.doctorId == request.resource.data.doctorId &&
-           getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.organizationId == request.resource.data.organizationId)
+    function isPendingPatientActivation(orgId, patientId) {
+      return patientEmailMatchesAuthenticatedUser(orgId, patientId)
+        && patientDocument(orgId, patientId).data.get('accountActivated', false) == false
+        && patientDocument(orgId, patientId).data.get('firebaseUid', null) == null;
+    }
+
+    // ============================================================
+    // ADMIN DOCUMENTS
+    // ============================================================
+
+    match /admins/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // USERS
+    // ============================================================
+
+    match /users/{uid} {
+      allow read: if signedIn()
+        && (request.auth.uid == uid || isAdmin());
+
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.uid == uid
+        && request.resource.data.role in ['patient', 'doctor', 'organization']
+        && (
+          (
+            request.resource.data.role == 'organization'
+            && (
+              matchingOrganizationInvitation(
+                request.resource.data.organizationId,
+                request.resource.data.get('invitationId', null)
+              )
+              || (
+                exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId))
+                && get(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)).data.firebaseUid == uid
+                && get(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)).data.email == request.resource.data.email
+              )
+            )
+          )
+          || (
+            request.resource.data.role == 'doctor'
+            && request.resource.data.doctorId is string
+            && exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/doctors/$(request.resource.data.doctorId))
+            && get(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/doctors/$(request.resource.data.doctorId)).data.firebaseUid == uid
+            && get(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/doctors/$(request.resource.data.doctorId)).data.organizationId == request.resource.data.organizationId
+            && get(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/doctors/$(request.resource.data.doctorId)).data.email == request.resource.data.email
+          )
+          || (
+            request.resource.data.role == 'patient'
+            && request.resource.data.patientId is string
+            && request.resource.data.doctorId is string
+            && request.resource.data.organizationId is string
+            && request.resource.data.email == request.auth.token.email
+            && exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId))
+            && getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.id == request.resource.data.patientId
+            && getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.email == request.resource.data.email
+            && getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.firebaseUid == uid
+            && getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.accountActivated == true
+            && getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.doctorId == request.resource.data.doctorId
+            && getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.organizationId == request.resource.data.organizationId
+          )
         );
 
-      allow update: if signedIn() &&
-        request.auth.uid == uid &&
-        request.resource.data.uid == uid &&
-        request.resource.data.email == resource.data.email &&
-        request.resource.data.role == resource.data.role &&
-        request.resource.data.organizationId == resource.data.organizationId &&
-        request.resource.data.get('doctorId', null) == resource.data.get('doctorId', null) &&
-        request.resource.data.get('patientId', null) == resource.data.get('patientId', null) &&
-        request.resource.data.get('clinicId', null) == resource.data.get('clinicId', null) &&
-        request.resource.data.role in ['patient', 'doctor', 'organization'];
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.uid == uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.organizationId == resource.data.organizationId
+        && request.resource.data.get('doctorId', null) == resource.data.get('doctorId', null)
+        && request.resource.data.get('patientId', null) == resource.data.get('patientId', null)
+        && request.resource.data.get('clinicId', null) == resource.data.get('clinicId', null)
+        && request.resource.data.role in ['patient', 'doctor', 'organization'];
 
       allow delete: if false;
     }
+
+    // ============================================================
+    // ORGANIZATIONS
+    // ============================================================
 
     match /organizations/{organizationId} {
       allow read: if signedIn() && (
-        request.auth.uid == resource.data.firebaseUid ||
-        request.auth.token.email == resource.data.email ||
-        (currentUserProfile() != null && currentUserProfile().data.organizationId == organizationId) ||
-        isAdmin()
+        request.auth.uid == resource.data.get('firebaseUid', null)
+        || request.auth.token.email == resource.data.get('email', null)
+        || (
+          currentUserProfile() != null
+          && currentUserProfile().data.organizationId == organizationId
+        )
+        || isAdmin()
       );
 
-      allow create: if isAdmin() || (signedIn() &&
-        request.resource.data.firebaseUid == request.auth.uid &&
-        request.resource.data.email == request.auth.token.email);
+      allow create: if isAdmin() || (
+        signedIn()
+        && request.resource.data.firebaseUid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+      );
 
-      allow update: if signedIn() &&
-        request.resource.data.email == resource.data.email &&
-        (
-          (request.auth.uid == resource.data.get('firebaseUid', null) &&
-            request.resource.data.get('firebaseUid', null) == resource.data.get('firebaseUid', null)) ||
-          (resource.data.get('firebaseUid', null) == null &&
-            request.auth.token.email == resource.data.email &&
-            request.resource.data.get('firebaseUid', null) == request.auth.uid)
-        );
+      allow update: if isAdmin() || (
+        signedIn()
+        && request.resource.data.email == resource.data.email
+        && (
+          (
+            request.auth.uid == resource.data.get('firebaseUid', null)
+            && request.resource.data.get('firebaseUid', null) == resource.data.get('firebaseUid', null)
+          )
+          || (
+            resource.data.get('firebaseUid', null) == null
+            && request.auth.token.email == resource.data.email
+            && request.resource.data.get('firebaseUid', null) == request.auth.uid
+          )
+        )
+      );
 
       allow delete: if false;
     }
+
+    // ============================================================
+    // INVITATIONS
+    // ============================================================
 
     match /organizations/{organizationId}/invitations/{invitationId} {
       allow read: if signedIn() && (
-        ownsOrganization(organizationId) ||
-        (resource.data.get('recipientEmail', resource.data.email) == request.auth.token.email && resource.data.role in ['doctor', 'organization'] && resource.data.status == 'pending') ||
-        isAdmin()
+        ownsOrganization(organizationId)
+        || (
+          resource.data.get('recipientEmail', resource.data.email) == request.auth.token.email
+          && resource.data.role in ['doctor', 'organization']
+          && resource.data.status == 'pending'
+        )
+        || isAdmin()
       );
 
-      allow create: if signedIn() &&
-        ownsOrganization(organizationId) &&
-        get(/databases/$(database)/documents/organizations/$(organizationId)).data.status == 'active' &&
-        request.resource.data.organizationId == organizationId &&
-        request.resource.data.role in ['doctor', 'organization'] &&
-        request.resource.data.email is string &&
-        request.resource.data.status == 'pending' &&
-        request.resource.data.id == invitationId &&
-        request.resource.data.invitedBy == request.auth.uid;
+      allow create: if signedIn()
+        && ownsOrganization(organizationId)
+        && get(/databases/$(database)/documents/organizations/$(organizationId)).data.status == 'active'
+        && request.resource.data.organizationId == organizationId
+        && request.resource.data.role in ['doctor', 'organization']
+        && request.resource.data.email is string
+        && request.resource.data.status == 'pending'
+        && request.resource.data.id == invitationId
+        && request.resource.data.invitedBy == request.auth.uid;
 
-      allow update: if signedIn() &&
-        ((ownsOrganization(organizationId) || isAdmin()) || (
-          resource.data.get('recipientEmail', resource.data.email) == request.auth.token.email &&
-          resource.data.role in ['doctor', 'organization'] &&
-          resource.data.status == 'pending' &&
-          (resource.data.get('expiresAt', null) == null || resource.data.expiresAt > request.time) &&
-          request.resource.data.status == 'accepted' &&
-          request.resource.data.userId == request.auth.uid &&
-          request.resource.data.get('acceptedAt', null) != null
-        )) &&
-        request.resource.data.organizationId == organizationId &&
-        request.resource.data.role == resource.data.role &&
-        request.resource.data.email == resource.data.email &&
-        request.resource.data.id == resource.data.id &&
-        request.resource.data.invitedBy == resource.data.invitedBy &&
-        request.resource.data.doctorId == resource.data.doctorId &&
-        request.resource.data.patientId == resource.data.patientId &&
-        request.resource.data.get('clinicId', null) == resource.data.get('clinicId', null);
+      allow update: if signedIn()
+        && (
+          ownsOrganization(organizationId)
+          || isAdmin()
+          || (
+            resource.data.get('recipientEmail', resource.data.email) == request.auth.token.email
+            && resource.data.role in ['doctor', 'organization']
+            && resource.data.status == 'pending'
+            && (
+              resource.data.get('expiresAt', null) == null
+              || resource.data.expiresAt > request.time
+            )
+            && request.resource.data.status == 'accepted'
+            && request.resource.data.userId == request.auth.uid
+            && request.resource.data.get('acceptedAt', null) != null
+          )
+        )
+        && request.resource.data.organizationId == organizationId
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.invitedBy == resource.data.invitedBy
+        && request.resource.data.get('doctorId', null) == resource.data.get('doctorId', null)
+        && request.resource.data.get('patientId', null) == resource.data.get('patientId', null)
+        && request.resource.data.get('clinicId', null) == resource.data.get('clinicId', null);
 
-      allow delete: if signedIn() && (ownsOrganization(organizationId) || isAdmin());
+      allow delete: if signedIn()
+        && (ownsOrganization(organizationId) || isAdmin());
     }
 
     match /{path=**}/invitations/{invitationId} {
-      allow read: if signedIn() &&
-        resource.data.get('organizationId', null) is string &&
-        resource.data.get('recipientEmail', resource.data.email) == request.auth.token.email &&
-        resource.data.role == 'doctor' &&
-        resource.data.status == 'pending';
+      allow read: if signedIn()
+        && resource.data.get('organizationId', null) is string
+        && resource.data.get('recipientEmail', resource.data.email) == request.auth.token.email
+        && resource.data.role == 'doctor'
+        && resource.data.status == 'pending';
     }
+
+    // ============================================================
+    // DOCTORS
+    // ============================================================
 
     match /organizations/{organizationId}/doctors/{doctorId} {
-      allow read: if signedIn() && (ownsOrganization(organizationId) || isOrganizationMember(organizationId) || isDoctorOfOrganization(organizationId, doctorId) || isPendingDoctorInvitation(organizationId, doctorId) || isAdmin());
+      allow read: if signedIn() && (
+        ownsOrganization(organizationId)
+        || isOrganizationMember(organizationId)
+        || isPatientOfOrganization(organizationId)
+        || isDoctorOfOrganization(organizationId, doctorId)
+        || isPendingDoctorInvitation(organizationId, doctorId)
+        || isAdmin()
+      );
 
-      allow create: if signedIn() &&
-        ownsOrganization(organizationId) &&
-        request.resource.data.organizationId == organizationId &&
-        request.resource.data.id == doctorId &&
-        request.resource.data.get('firebaseUid', null) == null;
+      allow create: if signedIn()
+        && ownsOrganization(organizationId)
+        && request.resource.data.organizationId == organizationId
+        && request.resource.data.id == doctorId
+        && request.resource.data.get('firebaseUid', null) == null;
 
-      allow update: if signedIn() &&
-        (ownsOrganization(organizationId) || isDoctorOfOrganization(organizationId, doctorId) ||
-         (isPendingDoctorInvitation(organizationId, doctorId) &&
-          request.resource.data.firebaseUid == request.auth.uid &&
-          request.resource.data.status == 'active')) &&
-        request.resource.data.organizationId == organizationId &&
-        request.resource.data.id == resource.data.id &&
-        request.resource.data.email == resource.data.email;
+      allow update: if signedIn()
+        && (
+          ownsOrganization(organizationId)
+          || isAdmin()
+          || isDoctorOfOrganization(organizationId, doctorId)
+          || (
+            isPendingDoctorInvitation(organizationId, doctorId)
+            && request.resource.data.firebaseUid == request.auth.uid
+            && request.resource.data.status == 'active'
+          )
+        )
+        && request.resource.data.organizationId == organizationId
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.email == resource.data.email;
 
-      allow delete: if signedIn() && ownsOrganization(organizationId);
+      allow delete: if signedIn()
+        && (ownsOrganization(organizationId) || isAdmin());
     }
+
+    // ============================================================
+    // PATIENTS
+    // ============================================================
 
     match /organizations/{organizationId}/patients/{patientId} {
       allow read: if signedIn() && (
-        ownsOrganization(organizationId) ||
-        isOrganizationMember(organizationId) ||
-        isDoctorPatientAccess(organizationId, resource.data.doctorId, patientId) ||
-        resource.data.get('firebaseUid', null) == request.auth.uid ||
-        (resource.data.get('email', null) == request.auth.token.email &&
-         resource.data.get('status', null) == 'pending' &&
-         resource.data.get('accountActivated', false) == false &&
-         resource.data.get('firebaseUid', null) == null) ||
-        isAdmin()
+        ownsOrganization(organizationId)
+        || isOrganizationMember(organizationId)
+        || isCurrentDoctorForOrganization(organizationId, resource.data.doctorId)
+        || isDoctorPatientAccess(organizationId, resource.data.doctorId, patientId)
+        || resource.data.get('firebaseUid', null) == request.auth.uid
+        || isPendingPatientActivation(organizationId, patientId)
+        || isAdmin()
       );
 
-      allow create: if signedIn() &&
-        isDoctorOfOrganization(organizationId, request.resource.data.doctorId) &&
-        request.resource.data.organizationId == organizationId &&
-        request.resource.data.id == patientId &&
-        request.resource.data.get('firebaseUid', null) == null;
+      allow create: if signedIn()
+        && isDoctorOfOrganization(organizationId, request.resource.data.doctorId)
+        && request.resource.data.organizationId == organizationId
+        && request.resource.data.id == patientId
+        && request.resource.data.get('firebaseUid', null) == null;
 
       allow update: if signedIn() && (
-        ownsOrganization(organizationId) ||
-        (isDoctorOfOrganization(organizationId, resource.data.doctorId) && request.resource.data.doctorId == resource.data.doctorId) ||
-        (resource.data.get('firebaseUid', null) == request.auth.uid &&
-         request.resource.data.get('firebaseUid', null) == resource.data.get('firebaseUid', null) &&
-         request.resource.data.doctorId == resource.data.doctorId) ||
-        (resource.data.get('email', null) == request.auth.token.email &&
-         resource.data.get('status', null) == 'pending' &&
-         resource.data.get('accountActivated', false) == false &&
-         resource.data.get('firebaseUid', null) == null &&
-         request.resource.data.get('firebaseUid', null) == request.auth.uid &&
-         request.resource.data.get('accountActivated', false) == true &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['firebaseUid', 'accountActivated', 'updatedAt'])) ||
-        (resource.data.get('firebaseUid', null) == request.auth.uid &&
-         request.resource.data.get('firebaseUid', null) == resource.data.get('firebaseUid', null) &&
-         request.resource.data.doctorId == resource.data.doctorId)
-      ) && request.resource.data.organizationId == resource.data.organizationId && request.resource.data.id == resource.data.id;
+        ownsOrganization(organizationId)
+        || isAdmin()
+        || (
+          isDoctorOfOrganization(organizationId, resource.data.doctorId)
+          && request.resource.data.doctorId == resource.data.doctorId
+        )
+        || (
+          resource.data.get('firebaseUid', null) == request.auth.uid
+          && request.resource.data.get('firebaseUid', null) == resource.data.get('firebaseUid', null)
+          && request.resource.data.doctorId == resource.data.doctorId
+        )
+        || (
+          isPendingPatientActivation(organizationId, patientId)
+          && request.resource.data.get('firebaseUid', null) == request.auth.uid
+          && request.resource.data.get('accountActivated', false) == true
+          && request.resource.data.organizationId == resource.data.organizationId
+          && request.resource.data.id == resource.data.id
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.doctorId == resource.data.doctorId
+          && request.resource.data.get('clinicId', null) == resource.data.get('clinicId', null)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'firebaseUid',
+            'accountActivated',
+            'updatedAt'
+          ])
+        )
+      )
+      && request.resource.data.organizationId == resource.data.organizationId
+      && request.resource.data.id == resource.data.id;
 
-      allow delete: if signedIn() && (ownsOrganization(organizationId) || isAdmin());
+      allow delete: if signedIn()
+        && (ownsOrganization(organizationId) || isAdmin());
     }
+
+    // Allow a patient to find their pending activation record by email.
+    match /{path=**}/patients/{patientId} {
+      allow read: if signedIn()
+        && resource.data.get('email', null) == request.auth.token.email
+        && resource.data.get('accountActivated', false) == false
+        && resource.data.get('firebaseUid', null) == null;
+    }
+
+    // ============================================================
+    // PERMANENT MEDICAL NOTES
+    // ============================================================
 
     match /organizations/{organizationId}/patients/{patientId}/medical_notes/{noteId} {
       allow read: if signedIn() && (
-        ownsOrganization(organizationId) ||
-        isOrganizationMember(organizationId) ||
-        (currentUserProfile() != null &&
-          currentUserProfile().data.role == 'doctor' &&
-          isDoctorPatientAccess(organizationId, currentUserProfile().data.doctorId, patientId)) ||
-        isAdmin()
+        ownsOrganization(organizationId)
+        || isOrganizationMember(organizationId)
+        || (
+          currentUserProfile() != null
+          && currentUserProfile().data.role == 'doctor'
+          && isDoctorPatientAccess(
+            organizationId,
+            currentUserProfile().data.doctorId,
+            patientId
+          )
+        )
+        || isAdmin()
       );
 
-      allow create: if signedIn() &&
-        currentUserProfile() != null &&
-        currentUserProfile().data.role == 'doctor' &&
-        isDoctorPatientAccess(organizationId, currentUserProfile().data.doctorId, patientId) &&
-        request.resource.data.doctorUid == request.auth.uid;
+      allow create: if signedIn()
+        && currentUserProfile() != null
+        && currentUserProfile().data.role == 'doctor'
+        && isDoctorPatientAccess(
+          organizationId,
+          currentUserProfile().data.doctorId,
+          patientId
+        )
+        && request.resource.data.doctorUid == request.auth.uid;
 
-      allow update: if false;
-
-      allow delete: if false;
+      allow update, delete: if false;
     }
+
+    // ============================================================
+    // CLINICS
+    // ============================================================
 
     match /organizations/{organizationId}/clinics/{clinicId} {
-      allow read: if isAdmin() || (signedIn() && (isOrganizationMember(organizationId) || organizationUserForClinic(organizationId, clinicId)));
+      allow read: if isAdmin() || (
+        signedIn() && (
+          isOrganizationMember(organizationId)
+          || isPatientOfOrganization(organizationId)
+          || organizationUserForClinic(organizationId, clinicId)
+          || (
+            currentUserProfile() != null
+            && currentUserProfile().data.role == 'doctor'
+            && currentUserProfile().data.organizationId == organizationId
+            && currentUserProfile().data.get('clinicId', null) == clinicId
+          )
+        )
+      );
 
-      allow create, update: if signedIn() &&
-        (isAdmin() || (currentUserProfile() != null && organizationUserForClinic(organizationId, clinicId))) &&
-        request.resource.data.organizationId == organizationId;
+      allow create, update: if signedIn()
+        && (
+          isAdmin()
+          || organizationUserForClinic(organizationId, clinicId)
+        )
+        && request.resource.data.organizationId == organizationId;
 
-      allow delete: if isAdmin() || (signedIn() && currentUserProfile() != null && organizationUserForClinic(organizationId, clinicId));
+      allow delete: if isAdmin()
+        || organizationUserForClinic(organizationId, clinicId);
     }
+
+    // ============================================================
+    // APPOINTMENTS
+    // ============================================================
 
     match /organizations/{organizationId}/appointments/{appointmentId} {
       allow read: if signedIn() && (
-        ownsOrganization(organizationId) ||
-        isOrganizationMember(organizationId) ||
-        (resource.data.doctorId != null && isDoctorOfOrganization(organizationId, resource.data.doctorId)) ||
-        (resource.data.patientId is string &&
-         (resource.data.get('patientUid', null) == null || resource.data.get('patientUid', null) == request.auth.uid) &&
-         exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)) &&
-         get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.firebaseUid == request.auth.uid &&
-         get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.organizationId == organizationId &&
-         get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.doctorId == resource.data.doctorId) ||
-        (resource.data.patientId is string &&
-         exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)) &&
-         get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.email == request.auth.token.email &&
-         get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.status == 'pending' &&
-         get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.get('accountActivated', false) == false &&
-         get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.get('firebaseUid', null) == null &&
-         get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.doctorId == resource.data.doctorId) ||
-        isAdmin()
+        ownsOrganization(organizationId)
+        || isOrganizationMember(organizationId)
+        || (
+          resource.data.get('doctorId', null) is string
+          && isDoctorOfOrganization(organizationId, resource.data.doctorId)
+        )
+        || (
+          resource.data.get('patientUid', null) == request.auth.uid
+          && resource.data.get('patientId', null) is string
+          && exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId))
+          && patientDocument(organizationId, resource.data.patientId).data.firebaseUid == request.auth.uid
+          && patientDocument(organizationId, resource.data.patientId).data.organizationId == organizationId
+          && patientDocument(organizationId, resource.data.patientId).data.doctorId == resource.data.doctorId
+        )
+        || (
+          resource.data.get('patientId', null) is string
+          && patientEmailMatchesAuthenticatedUser(organizationId, resource.data.patientId)
+          && resource.data.organizationId == organizationId
+        )
+        || (
+          resource.data.get('patientId', null) is string
+          && isPendingPatientActivation(organizationId, resource.data.patientId)
+          && patientDocument(organizationId, resource.data.patientId).data.doctorId == resource.data.doctorId
+        )
+        || isAdmin()
       );
 
-      allow create: if signedIn() &&
-        request.resource.data.organizationId == organizationId &&
-        request.resource.data.clinicId is string &&
-        request.resource.data.doctorId is string &&
-        request.resource.data.patientId is string &&
-        (request.resource.data.get('patientUid', null) == null || request.resource.data.patientUid is string) &&
-        (
-        ownsOrganization(organizationId) ||
-        (isDoctorOfOrganization(organizationId, request.resource.data.doctorId) && exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)) && get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)).data.doctorId == request.resource.data.doctorId && get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)).data.organizationId == organizationId && get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)).data.get('clinicId', null) == request.resource.data.clinicId && exists(/databases/$(database)/documents/organizations/$(organizationId)/clinics/$(request.resource.data.clinicId)) && get(/databases/$(database)/documents/organizations/$(organizationId)/clinics/$(request.resource.data.clinicId)).data.organizationId == organizationId)
-      );
+      allow create: if signedIn()
+        && request.resource.data.organizationId == organizationId
+        && request.resource.data.clinicId is string
+        && request.resource.data.doctorId is string
+        && request.resource.data.patientId is string
+        && (
+          request.resource.data.get('patientUid', null) == null
+          || request.resource.data.patientUid is string
+        )
+        && (
+          ownsOrganization(organizationId)
+          || isAdmin()
+          || (
+            isDoctorOfOrganization(organizationId, request.resource.data.doctorId)
+            && exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId))
+            && patientDocument(organizationId, request.resource.data.patientId).data.doctorId == request.resource.data.doctorId
+            && patientDocument(organizationId, request.resource.data.patientId).data.organizationId == organizationId
+            && patientDocument(organizationId, request.resource.data.patientId).data.get('clinicId', null) == request.resource.data.clinicId
+            && exists(/databases/$(database)/documents/organizations/$(organizationId)/clinics/$(request.resource.data.clinicId))
+            && get(/databases/$(database)/documents/organizations/$(organizationId)/clinics/$(request.resource.data.clinicId)).data.organizationId == organizationId
+          )
+        );
 
       allow update: if signedIn() && (
-        ownsOrganization(organizationId) ||
-        (isDoctorOfOrganization(organizationId, resource.data.doctorId) &&
-         request.resource.data.doctorId == resource.data.doctorId &&
-         request.resource.data.patientId == resource.data.patientId &&
-         request.resource.data.get('patientUid', null) == resource.data.get('patientUid', null) &&
-          request.resource.data.clinicId == resource.data.clinicId) ||
-          (resource.data.get('patientUid', null) == null &&
-          request.resource.data.get('patientUid', null) == request.auth.uid &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['patientUid', 'updatedAt']) &&
-          exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)) &&
-          getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.firebaseUid == request.auth.uid &&
-          getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.accountActivated == true &&
-          getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.email == request.auth.token.email &&
-          getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.doctorId == resource.data.doctorId &&
-          getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.organizationId == organizationId &&
-          getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.get('clinicId', null) == resource.data.clinicId) ||
-      ) &&
-      request.resource.data.organizationId == organizationId &&
-      request.resource.data.patientId == resource.data.patientId &&
-      request.resource.data.doctorId == resource.data.doctorId &&
-      request.resource.data.clinicId == resource.data.clinicId;
+        ownsOrganization(organizationId)
+        || isAdmin()
+        || (
+          isDoctorOfOrganization(organizationId, resource.data.doctorId)
+          && request.resource.data.doctorId == resource.data.doctorId
+          && request.resource.data.patientId == resource.data.patientId
+          && request.resource.data.get('patientUid', null) == resource.data.get('patientUid', null)
+          && request.resource.data.clinicId == resource.data.clinicId
+        )
+        || (
+          resource.data.get('patientId', null) is string
+          && patientEmailMatchesAuthenticatedUser(organizationId, resource.data.patientId)
+          && resource.data.get('patientUid', null) == null
+          && request.resource.data.get('patientUid', null) == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'patientUid',
+            'updatedAt'
+          ])
+          && request.resource.data.organizationId == resource.data.organizationId
+          && request.resource.data.patientId == resource.data.patientId
+          && request.resource.data.doctorId == resource.data.doctorId
+          && request.resource.data.clinicId == resource.data.clinicId
+          && exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId))
+          && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.firebaseUid == request.auth.uid
+          && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.accountActivated == true
+          && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.email == request.auth.token.email
+          && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.doctorId == resource.data.doctorId
+          && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.organizationId == organizationId
+          && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.get('clinicId', null) == resource.data.clinicId
+        )
+      )
+      && request.resource.data.organizationId == resource.data.organizationId
+      && request.resource.data.patientId == resource.data.patientId
+      && request.resource.data.doctorId == resource.data.doctorId
+      && request.resource.data.clinicId == resource.data.clinicId;
 
-      allow delete: if signedIn() && (ownsOrganization(organizationId) || isAdmin());
+      allow delete: if signedIn()
+        && (ownsOrganization(organizationId) || isAdmin());
     }
+
+    // ============================================================
+    // ADMIN ACCESS TO ALLOWED NESTED COLLECTIONS
+    // ============================================================
+
+    match /organizations/{organizationId}/{collectionName}/{documentId} {
+      allow read, create, update, delete: if isAdmin()
+        && collectionName in [
+          'clinics',
+          'doctors',
+          'patients',
+          'appointments'
+        ];
+    }
+
+    // ============================================================
+    // DEFAULT DENY
+    // ============================================================
 
     match /{document=**} {
       allow read, write: if false;
