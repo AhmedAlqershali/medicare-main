@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 
 import '../firestore/firestore_service.dart';
 import '../theme/app_theme.dart';
-
 class AppThemeService {
   AppThemeService(this._service);
 

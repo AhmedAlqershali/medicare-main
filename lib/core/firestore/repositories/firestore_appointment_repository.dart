@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import '../firestore_paths.dart';
 import '../firestore_service.dart';
 
 class FirestoreAppointmentRepository {

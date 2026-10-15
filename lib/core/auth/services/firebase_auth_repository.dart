@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/account_role.dart';
-import '../models/account_status.dart';
 import '../models/auth_result.dart';
 import '../models/auth_session.dart';
 import '../models/auth_user.dart';
@@ -429,7 +428,7 @@ class FirebaseAuthRepository implements AuthRepository {
             try {
               await _firebaseAuth.signOut();
             } catch (_) {}
-      }
+          }}
       final message = switch (error) {
         FirebaseAuthException exception => exception.message ?? _mapFirebaseAuthError(exception),
         StateError stateError => stateError.message,
@@ -438,10 +437,9 @@ class FirebaseAuthRepository implements AuthRepository {
       return AuthResult(success: false, message: message);
     }
   }
-
   @override
-  void logout() {
-    _firebaseAuth.signOut();
+  Future<void> logout() async {
+    await _firebaseAuth.signOut();
     _session = const AuthSession.signedOut();
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:medicare/core/auth/models/medical_note.dart';
 
 import '../../core/auth/services/firebase_auth_repository.dart';
 import '../../core/firestore/repositories/firestore_clinic_repository.dart';
