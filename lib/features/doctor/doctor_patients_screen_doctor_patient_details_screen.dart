@@ -250,8 +250,7 @@ class _DoctorPatientDetailsScreenState
                   onChanged: (value) {
                     if (value == null) return;
 
-                    final times =
-                        _availability[value] ?? const <String>[];
+                    final times = _availability[value] ?? const <String>[];
 
                     if (times.isEmpty) return;
 
@@ -728,12 +727,34 @@ class _DoctorPatientDetailsScreenState
                   ),
                   const Divider(height: AppSpacing.lg),
 
-                  // تم إصلاح مصدر قيمة مكان المشكلة.
+                  // عرض مكان المشكلة باللغة العربية.
                   _InfoRow(
                     label: 'مكان المشكلة',
-                    value: (_patient.problemLocation ?? '').trim().isEmpty
-                        ? 'غير محدد'
-                        : _patient.problemLocation!.trim(),
+                    value: switch (_patient.problemLocation?.trim()) {
+                      'head' => 'الرأس',
+                      'eye' => 'العين',
+                      'ear' => 'الأذن',
+                      'nose' => 'الأنف',
+                      'mouth_teeth' => 'الفم والأسنان',
+                      'neck' => 'الرقبة',
+                      'shoulder' => 'الكتف',
+                      'arm' => 'الذراع',
+                      'hand' => 'اليد',
+                      'chest' => 'الصدر',
+                      'abdomen' => 'البطن',
+                      'back' => 'الظهر',
+                      'pelvis' => 'الحوض',
+                      'thigh' => 'الفخذ',
+                      'knee' => 'الركبة',
+                      'leg' => 'الساق',
+                      'foot' => 'القدم',
+                      'sole_of_foot' => 'كف القدم',
+                      'other' => 'أخرى',
+                      final location?
+                      when location.isNotEmpty =>
+                      location,
+                      _ => 'غير محدد',
+                    },
                     icon: Icons.accessibility_new_outlined,
                   ),
 
