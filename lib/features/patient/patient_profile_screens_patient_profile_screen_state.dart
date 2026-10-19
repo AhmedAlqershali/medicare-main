@@ -1,376 +1,257 @@
+
 part of 'patient_profile_screens.dart';
 
 class _PatientProfileScreenState extends State<PatientProfileScreen> {
-var _patient = const PatientProfile(
-name: '',
-phone: '',
-email: '',
-birthDate: '',
-gender: '',
-problemLocation: null,
-medicalNotes: null,
-medicalNotesHistory: [],
-);
+  var _patient = const PatientProfile(
+    name: '',
+    phone: '',
+    email: '',
+    birthDate: '',
+    gender: '',
+    problemLocation: null,
+    medicalNotes: null,
+    medicalNotesHistory: [],
+  );
 
-@override
-void initState() {
-super.initState();
-_loadProfile();
-}
+  bool _isLoading = true;
+  String? _loadError;
 
-Future<void> _loadProfile() async {
-try {
-final profile =
-await const PatientProfileRepositoryImpl()
-    .getPatientProfile();
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
 
-if (!mounted) return;
+  Future<void> _loadProfile() async {
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _loadError = null;
+      });
+    }
 
-setState(() {
-_patient = PatientProfile(
-name: profile.name,
-phone: profile.phone,
-email: profile.email,
-birthDate: profile.birthDate,
-gender: profile.gender,
-problemLocation: profile.problemLocation,
-medicalNotes: profile.medicalNotes,
-medicalNotesHistory:
-profile.medicalNotesHistory,
-);
-});
-} catch (error) {
-if (!mounted) return;
+    try {
+      final profile =
+      await const PatientProfileRepositoryImpl().getPatientProfile();
 
-ScaffoldMessenger.of(context).showSnackBar(
-SnackBar(
-content: Text(error.toString()),
-),
-);
-}
-}
+      if (!mounted) return;
 
-@override
-Widget build(BuildContext context) => Scaffold(
-appBar: AppBar(
-title: const Text('الملف الشخصي'),
-),
-body: SafeArea(
-child: SingleChildScrollView(
-padding: const EdgeInsets.fromLTRB(
-AppSpacing.lg,
-AppSpacing.sm,
-AppSpacing.lg,
-AppSpacing.xl,
-),
-child: Column(
-crossAxisAlignment: CrossAxisAlignment.start,
-children: [
-_ProfileHeader(
-patient: _patient,
-onEdit: () async {
-final updated =
-await Navigator.of(context)
-    .push<PatientProfile>(
-MaterialPageRoute(
-builder: (_) =>
-EditPatientProfileScreen(
-patient: _patient,
-),
-),
-);
+      setState(() {
+        _patient = PatientProfile(
+          name: profile.name,
+          phone: profile.phone,
+          email: profile.email,
+          birthDate: profile.birthDate,
+          gender: profile.gender,
+          problemLocation: profile.problemLocation,
+          // Medical notes are intentionally hidden from patients.
+          medicalNotes: null,
+          medicalNotesHistory: const [],
+        );
+        _isLoading = false;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('[PatientProfile] ERROR: $error');
+      debugPrint('[PatientProfile] STACK TRACE: $stackTrace');
 
-if (updated == null || !mounted) {
-return;
-}
+      if (!mounted) return;
 
-try {
-final repository =
-const PatientProfileRepositoryImpl();
+      setState(() {
+        _isLoading = false;
+        _loadError = 'تعذر تحميل بيانات الملف الشخصي.';
+      });
+    }
+  }
 
-await repository.updatePatientProfile(
-PatientProfileEntity(
-name: updated.name,
-phone: updated.phone,
-email: updated.email,
-birthDate: updated.birthDate,
-gender: updated.gender,
-),
-);
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('الملف الشخصي'),
+      ),
+      body: SafeArea(
+        child: _isLoading
+            ? const Center(
+          child: CircularProgressIndicator(),
+        )
+            : _loadError != null
+            ? Center(
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.cloud_off_outlined,
+                  size: 48,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  _loadError!,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                FilledButton.icon(
+                  onPressed: _loadProfile,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('إعادة المحاولة'),
+                ),
+              ],
+            ),
+          ),
+        )
+            : RefreshIndicator(
+          onRefresh: _loadProfile,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.sm,
+              AppSpacing.lg,
+              AppSpacing.xl,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _ProfileHeader(
+                  patient: _patient,
+                  onEdit: _editProfile,
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                const SectionHeader(
+                  title: 'المعلومات الشخصية',
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                _InfoCard(
+                  icon: Icons.badge_outlined,
+                  label: 'الاسم الكامل',
+                  value: _displayValue(_patient.name),
+                ),
+                _InfoCard(
+                  icon: Icons.phone_outlined,
+                  label: 'رقم الهاتف',
+                  value: _displayValue(_patient.phone),
+                ),
+                _InfoCard(
+                  icon: Icons.email_outlined,
+                  label: 'البريد الإلكتروني',
+                  value: _displayValue(_patient.email),
+                ),
+                _InfoCard(
+                  icon: Icons.cake_outlined,
+                  label: 'تاريخ الميلاد',
+                  value: _displayValue(_patient.birthDate),
+                ),
+                _InfoCard(
+                  icon: Icons.person_outline,
+                  label: 'الجنس',
+                  value: _genderLabel(_patient.gender),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                const SectionHeader(
+                  title: 'المعلومات الطبية',
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                _InfoCard(
+                  icon: Icons.accessibility_new_outlined,
+                  label: 'مكان المشكلة',
+                  value: _problemLocationLabel(
+                    _patient.problemLocation,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                _NavigationTile(
+                  icon: Icons.settings_outlined,
+                  title: 'الإعدادات',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                        const PatientSettingsScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
-await _loadProfile();
-} catch (error) {
-if (mounted) {
-ScaffoldMessenger.of(context)
-    .showSnackBar(
-SnackBar(
-content: Text(error.toString()),
-),
-);
-}
-}
-},
-),
+  String _displayValue(String value) {
+    return value.trim().isEmpty ? 'غير محدد' : value.trim();
+  }
 
-const SizedBox(
-height: AppSpacing.xl,
-),
+  String _genderLabel(String value) {
+    switch (value.trim().toLowerCase()) {
+      case 'male':
+        return 'ذكر';
+      case 'female':
+        return 'أنثى';
+      default:
+        return _displayValue(value);
+    }
+  }
 
-const SectionHeader(
-title: 'المعلومات الشخصية',
-),
+  String _problemLocationLabel(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'غير محدد';
+    }
 
-const SizedBox(
-height: AppSpacing.sm,
-),
+    switch (value.trim().toLowerCase()) {
+      case 'ear':
+        return 'الأذن';
+      case 'eye':
+        return 'العين';
+      case 'eyes':
+        return 'العينان';
+      default:
+        return value.trim();
+    }
+  }
 
-_InfoCard(
-icon: Icons.badge_outlined,
-label: 'الاسم الكامل',
-value: _patient.name,
-),
+  Future<void> _editProfile() async {
+    final updated = await Navigator.of(context).push<PatientProfile>(
+      MaterialPageRoute(
+        builder: (_) => EditPatientProfileScreen(patient: _patient),
+      ),
+    );
 
-_InfoCard(
-icon: Icons.phone_outlined,
-label: 'رقم الهاتف',
-value: _patient.phone,
-),
+    if (updated == null || !mounted) return;
 
-_InfoCard(
-icon: Icons.email_outlined,
-label: 'البريد الإلكتروني',
-value: _patient.email,
-),
+    try {
+      await const PatientProfileRepositoryImpl().updatePatientProfile(
+        PatientProfileEntity(
+          name: updated.name,
+          phone: updated.phone,
+          email: updated.email,
+          birthDate: updated.birthDate,
+          gender: updated.gender,
+        ),
+      );
 
-_InfoCard(
-icon: Icons.cake_outlined,
-label: 'تاريخ الميلاد',
-value: _patient.birthDate,
-),
+      await _loadProfile();
 
-_InfoCard(
-icon: Icons.person_outline,
-label: 'الجنس',
-value: _patient.gender,
-),
+      if (mounted && _loadError == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم تحديث البيانات بنجاح.'),
+          ),
+        );
+      }
+    } catch (error, stackTrace) {
+      debugPrint('[PatientProfile] UPDATE ERROR: $error');
+      debugPrint('[PatientProfile] UPDATE STACK TRACE: $stackTrace');
 
-const SizedBox(
-height: AppSpacing.lg,
-),
+      if (!mounted) return;
 
-const SectionHeader(
-title: 'المعلومات الطبية',
-),
-
-const SizedBox(
-height: AppSpacing.sm,
-),
-
-_InfoCard(
-icon: Icons.accessibility_new_outlined,
-label: 'مكان المشكلة',
-value: _patient.problemLocation == null ||
-_patient.problemLocation!
-    .trim()
-    .isEmpty
-? 'غير محدد'
-    : _patient.problemLocation!,
-),
-
-const SizedBox(
-height: AppSpacing.sm,
-),
-
-_buildMedicalNotesHistory(),
-
-const SizedBox(
-height: AppSpacing.md,
-),
-
-_NavigationTile(
-icon: Icons.settings_outlined,
-title: 'الإعدادات',
-onTap: () => Navigator.of(context).push(
-MaterialPageRoute(
-builder: (_) =>
-const PatientSettingsScreen(),
-),
-),
-),
-],
-),
-),
-),
-);
-
-Widget _buildMedicalNotesHistory() {
-final notes = _patient.medicalNotesHistory;
-
-if (notes.isEmpty) {
-final legacyNote = _patient.medicalNotes;
-
-if (legacyNote != null &&
-legacyNote.trim().isNotEmpty) {
-return AppCard(
-child: Column(
-crossAxisAlignment:
-CrossAxisAlignment.start,
-children: [
-Row(
-children: [
-const Icon(
-Icons.note_alt_outlined,
-color: AppColors.primary,
-),
-const SizedBox(
-width: AppSpacing.sm,
-),
-Text(
-'الملاحظات الطبية',
-style: Theme.of(context)
-    .textTheme
-    .titleMedium
-    ?.copyWith(
-fontWeight: FontWeight.bold,
-),
-),
-],
-),
-const SizedBox(
-height: AppSpacing.sm,
-),
-Text(
-legacyNote,
-style: Theme.of(context)
-    .textTheme
-    .bodyMedium,
-),
-],
-),
-);
-}
-
-return AppCard(
-child: Row(
-crossAxisAlignment:
-CrossAxisAlignment.start,
-children: [
-const Icon(
-Icons.note_alt_outlined,
-color: AppColors.primary,
-),
-const SizedBox(
-width: AppSpacing.sm,
-),
-Expanded(
-child: Text(
-'لا توجد ملاحظات طبية حتى الآن.',
-style: Theme.of(context)
-    .textTheme
-    .bodyMedium,
-),
-),
-],
-),
-);
-}
-
-return Column(
-crossAxisAlignment:
-CrossAxisAlignment.start,
-children: [
-Padding(
-padding: const EdgeInsets.only(
-bottom: AppSpacing.sm,
-),
-child: Text(
-'الملاحظات الطبية',
-style: Theme.of(context)
-    .textTheme
-    .titleMedium
-    ?.copyWith(
-fontWeight: FontWeight.bold,
-),
-),
-),
-
-...notes.reversed.map(
-(note) {
-final date = note.createdAt;
-
-final dateText = '${date.day}/${date.month}/${date.year}';
-
-return Padding(
-padding: const EdgeInsets.only(
-bottom: AppSpacing.sm,
-),
-child: AppCard(
-child: Column(
-crossAxisAlignment:
-CrossAxisAlignment.start,
-children: [
-Row(
-crossAxisAlignment:
-CrossAxisAlignment.start,
-children: [
-const Icon(
-Icons.note_alt_outlined,
-color: AppColors.primary,
-),
-const SizedBox(
-width: AppSpacing.sm,
-),
-const Expanded(
-child: Text(
-'ملاحظة طبية',
-style: TextStyle(
-fontWeight:
-FontWeight.bold,
-),
-),
-),
-if (dateText.isNotEmpty)
-Text(
-dateText,
-style: Theme.of(context)
-    .textTheme
-    .bodySmall,
-),
-],
-),
-
-const SizedBox(
-height: AppSpacing.sm,
-),
-
-Text(
-note.text,
-style: Theme.of(context)
-    .textTheme
-    .bodyMedium,
-),
-
-if (note.doctorName != null &&
-note.doctorName!
-    .trim()
-    .isNotEmpty) ...[
-const SizedBox(
-height: AppSpacing.sm,
-),
-Text(
-'بواسطة: ${note.doctorName}',
-style: Theme.of(context)
-    .textTheme
-    .bodySmall,
-),
-],
-],
-),
-),
-);
-},
-),
-],
-);
-}
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر تحديث البيانات. حاول مرة أخرى.'),
+        ),
+      );
+    }
+  }
 }

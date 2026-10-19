@@ -12,20 +12,17 @@ class PatientProfileRepositoryImpl implements PatientProfileRepository {
     final session = FirebaseAuthRepository.instance.session;
 
     final patientId = session.patientId;
-
     if (patientId == null || patientId.isEmpty) {
       throw StateError('لا توجد جلسة مريض نشطة.');
     }
 
     final organizationId = session.organizationId;
-
     if (organizationId == null || organizationId.isEmpty) {
       throw StateError('لا توجد مؤسسة مرتبطة بالمريض.');
     }
 
-    final repository = FirestorePatientRepository.instance;
-
-    final profile = await repository.fetchPatientById(
+    final profile = await FirestorePatientRepository.instance
+        .fetchPatientById(
       patientId,
       organizationId: organizationId,
     );
@@ -34,11 +31,7 @@ class PatientProfileRepositoryImpl implements PatientProfileRepository {
       throw StateError('لم يتم العثور على ملف المريض.');
     }
 
-    final medicalNotes = await repository.getMedicalNotes(
-      patientId: patientId,
-      organizationId: organizationId,
-    );
-
+    // لا نجلب الملاحظات الطبية في واجهة المريض.
     return PatientProfileEntity(
       name: profile.name,
       phone: profile.phone ?? '',
@@ -46,8 +39,8 @@ class PatientProfileRepositoryImpl implements PatientProfileRepository {
       birthDate: profile.birthDate ?? '',
       gender: profile.gender ?? '',
       problemLocation: profile.problemLocation,
-      medicalNotes: profile.medicalNotes,
-      medicalNotesHistory: medicalNotes,
+      medicalNotes: null,
+      medicalNotesHistory: const [],
     );
   }
 
@@ -58,13 +51,11 @@ class PatientProfileRepositoryImpl implements PatientProfileRepository {
     final session = FirebaseAuthRepository.instance.session;
 
     final patientId = session.patientId;
-
     if (patientId == null || patientId.isEmpty) {
       throw StateError('لا توجد جلسة مريض نشطة.');
     }
 
     final organizationId = session.organizationId;
-
     if (organizationId == null || organizationId.isEmpty) {
       throw StateError('لا توجد مؤسسة مرتبطة بالمريض.');
     }
