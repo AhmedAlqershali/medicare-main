@@ -1,0 +1,16 @@
+name: Medicare Notifications
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-notifications:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify workflow
+        run: echo "Medicare notification workflow is ready"
