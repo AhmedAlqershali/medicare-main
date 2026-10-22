@@ -599,7 +599,7 @@ class _FollowUpFormDialogState extends State<_FollowUpFormDialog> {
                     title: const Text('تاريخ الزيارة'),
                     subtitle: Text(_formatDate(_visitAt)),
                     trailing: const Icon(Icons.calendar_month_outlined),
-                    onTap: _pickDate,
+                    onTap: _appointmentId.isEmpty ? _pickDate : null,
                   ),
                   if (widget.completedAppointments.isNotEmpty)
                     DropdownButtonFormField<String>(
@@ -626,8 +626,31 @@ class _FollowUpFormDialogState extends State<_FollowUpFormDialog> {
                           );
                         }),
                       ],
-                      onChanged: (value) =>
-                          setState(() => _appointmentId = value ?? ''),
+                      onChanged: (value) {
+                        setState(() {
+                          _appointmentId = value ?? '';
+                          if (_appointmentId.isEmpty) return;
+                          for (final appointment
+                              in widget.completedAppointments) {
+                            if (appointment['id'].toString() !=
+                                _appointmentId) {
+                              continue;
+                            }
+                            final appointmentAt = parseAppointmentDateTime(
+                              appointment['date'],
+                              appointment['time'],
+                            );
+                            if (appointmentAt != null) {
+                              _visitAt = DateTime(
+                                appointmentAt.year,
+                                appointmentAt.month,
+                                appointmentAt.day,
+                              );
+                            }
+                            break;
+                          }
+                        });
+                      },
                     ),
                   const SizedBox(height: AppSpacing.sm),
                   _input(0, 'التقييم', required: true, maxLines: 3),

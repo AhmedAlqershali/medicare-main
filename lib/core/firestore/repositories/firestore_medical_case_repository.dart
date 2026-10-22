@@ -29,9 +29,20 @@ class FirestoreMedicalCaseRepository {
     Query<Map<String, dynamic>> query =
         _service.medicalCaseCollection(organizationId, patientId);
     final session = FirebaseAuthRepository.instance.session;
-    if (session.currentRole == AccountRole.doctor &&
-        session.doctorId != null) {
-      query = query.where('doctorId', isEqualTo: session.doctorId);
+    if (session.currentRole == AccountRole.doctor) {
+      final doctorId = session.doctorId;
+      if (doctorId == null || doctorId.isEmpty) {
+        throw StateError('لا توجد هوية طبيب مرتبطة بالجلسة الحالية.');
+      }
+      final doctor = await FirestoreDoctorRepository.instance
+          .fetchDoctorByIdForOrganization(organizationId, doctorId);
+      final clinicId = doctor?.clinicId;
+      if (doctor == null || clinicId == null || clinicId.isEmpty) {
+        throw StateError('لا توجد عيادة نشطة مرتبطة بالطبيب الحالي.');
+      }
+      query = query
+          .where('doctorId', isEqualTo: doctorId)
+          .where('clinicId', isEqualTo: clinicId);
     }
     final snapshot = await query.get();
 
@@ -190,6 +201,9 @@ class FirestoreMedicalCaseRepository {
           appointment['status'] != 'completed' ||
           appointmentAt == null ||
           appointmentAt.isAfter(DateTime.now()) ||
+          appointmentAt.year != visitAt.year ||
+          appointmentAt.month != visitAt.month ||
+          appointmentAt.day != visitAt.day ||
           appointment['organizationId'] != medicalCase.organizationId ||
           appointment['patientId'] != medicalCase.patientId ||
           appointment['doctorId'] != medicalCase.doctorId ||
