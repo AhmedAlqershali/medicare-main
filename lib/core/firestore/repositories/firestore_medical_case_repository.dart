@@ -119,8 +119,6 @@ class FirestoreMedicalCaseRepository {
     );
     if (patient == null ||
         patient.organizationId != organizationId ||
-        patient.doctorId != doctor.id ||
-        (patient.clinicId != null && patient.clinicId != doctor.clinicId) ||
         doctor.clinicId == null ||
         doctor.clinicId!.isEmpty) {
       throw StateError('لا يمكن فتح حالة خارج مرضى وعيادة الطبيب الحالي.');
@@ -169,7 +167,7 @@ class FirestoreMedicalCaseRepository {
       'patientId': patientId,
       'organizationId': organizationId,
       'doctorId': doctor.id,
-      'clinicId': patient.clinicId ?? doctor.clinicId,
+      'clinicId': doctor.clinicId,
       'title': title.trim(),
       'type': type.trim(),
       'startedAt': Timestamp.fromDate(startedAt),
@@ -214,9 +212,7 @@ class FirestoreMedicalCaseRepository {
       organizationId: medicalCase.organizationId,
     );
     if (patient == null ||
-        patient.doctorId != doctor.id ||
-      (patient.clinicId != null &&
-        patient.clinicId != medicalCase.clinicId)) {
+        patient.organizationId != medicalCase.organizationId) {
       throw StateError('تعذر التحقق من ربط الحالة بالمريض والطبيب والعيادة.');
     }
 

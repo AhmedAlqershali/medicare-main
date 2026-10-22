@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -17,14 +18,17 @@ class FirestorePatientRepository implements PatientRepository {
 FirestorePatientRepository._({
 FirestoreService? service,
 DoctorRepository? doctorRepository,
+FirebaseFunctions? functions,
 })  : _service = service ?? FirestoreService(),
 _doctorRepository =
-doctorRepository ?? FirestoreDoctorRepository.instance;
+doctorRepository ?? FirestoreDoctorRepository.instance,
+_functions = functions ?? FirebaseFunctions.instanceFor(region: 'us-central1');
 
 static final instance = FirestorePatientRepository._();
 
 final FirestoreService _service;
 final DoctorRepository _doctorRepository;
+final FirebaseFunctions _functions;
 
 @override
 Future<List<Patient>> patientsForDoctor(
@@ -48,34 +52,18 @@ organizationId: organizationId,
 if (doctor == null || doctor.organizationId.isEmpty) {
 return [];
 }
-final clinicId = doctor.clinicId;
-if (clinicId == null || clinicId.trim().isEmpty) {
-return [];
+if (doctor.id != doctorId ||
+    (organizationId != null && organizationId != doctor.organizationId)) {
+throw StateError('معرّف الطبيب أو المؤسسة غير مطابق للجلسة.');
 }
 
-final snapshot = await _service
-    .patientCollectionForOrganization(doctor.organizationId)
-    .where(
-'organizationId',
-isEqualTo: doctor.organizationId,
-)
-    .where(
-'doctorId',
-isEqualTo: doctor.id,
-)
-        .where(
-    'clinicId',
-    whereIn: [clinicId, null],
-    )
-    .get();
-
-return snapshot.docs
-    .map(
-(document) => Patient.fromMap({
-...document.data(),
-'id': document.id,
-}),
-)
+final result = await _functions.httpsCallable('listPatientsForDoctor').call();
+final resultData = Map<String, dynamic>.from(result.data as Map);
+final records = resultData['patients'] as List<dynamic>? ?? const [];
+return records
+    .whereType<Map>()
+    .map((record) => Patient.fromMap(Map<String, dynamic>.from(record)))
+    .where((patient) => patient.organizationId == doctor.organizationId)
     .toList();
 }
 
@@ -99,17 +87,29 @@ debugPrint(
 );
 
 try {
- Query<Map<String, dynamic>> query =
-         _service.patientCollectionForOrganization(organizationId);
  final uid = FirebaseAuth.instance.currentUser?.uid;
- if (uid != null && uid.isNotEmpty) {
-     final profile = await FirestoreUserProfileRepository().fetchUserProfile(uid);
-     if (profile?.role.name == 'organization' &&
-             profile?.clinicId != null &&
-             profile!.clinicId!.isNotEmpty) {
-         query = query.where('clinicId', isEqualTo: profile.clinicId);
-     }
+ if (uid == null || uid.isEmpty) {
+     throw StateError('يلزم تسجيل الدخول قبل قراءة المرضى.');
  }
+ final profile = await FirestoreUserProfileRepository().fetchUserProfile(uid);
+ if (profile?.role.name == 'organization' &&
+         profile?.organizationId == organizationId &&
+         profile?.clinicId != null &&
+         profile!.clinicId!.isNotEmpty) {
+     final result = await _functions.httpsCallable('listPatientsForClinic').call({
+         'clinicId': profile.clinicId,
+     });
+     final resultData = Map<String, dynamic>.from(result.data as Map);
+     final records = resultData['patients'] as List<dynamic>? ?? const [];
+     return records
+             .whereType<Map>()
+             .map((record) => Patient.fromMap(Map<String, dynamic>.from(record)))
+             .where((patient) => patient.organizationId == organizationId)
+             .toList();
+ }
+
+ Query<Map<String, dynamic>> query =
+                 _service.patientCollectionForOrganization(organizationId);
 
  final snapshot = await query.get();
 
@@ -207,44 +207,6 @@ if (!clinicSnapshot.exists ||
 throw StateError('عيادة الطبيب غير موجودة ضمن المؤسسة الحالية.');
 }
 
-final doctorPatients = await _service
-    .patientCollectionForOrganization(doctor.organizationId)
-    .where('doctorId', isEqualTo: doctor.id)
-    .get();
-if (doctorPatients.docs.any(
-  (document) =>
-      (document.data()['email'] as String?)?.trim().toLowerCase() ==
-      trimmedEmail,
-)) {
-throw StateError('يوجد سجل للمريض بهذا البريد لدى الطبيب الحالي.');
-}
-
-final now = DateTime.now();
-
-final patientReference = _service
-    .patientCollectionForOrganization(doctor.organizationId)
-    .doc();
-
-final appointmentReference = _service
-    .appointmentCollection(doctor.organizationId)
-    .doc();
-
-final patient = Patient(
-id: patientReference.id,
-name: normalizedName,
-email: trimmedEmail,
-doctorId: doctorId,
-organizationId: doctor.organizationId,
-clinicId: clinicId,
-status: AccountStatus.pending,
-accountActivated: false,
-initials: _initials(normalizedName),
-firebaseUid: null,
-createdAt: now,
-updatedAt: now,
-problemLocation: problemLocation?.trim(),
-);
-
 final appointmentDateTime = DateTime(
 appointmentDate.year,
 appointmentDate.month,
@@ -255,64 +217,41 @@ appointmentTime.minute,
 if (!appointmentDateTime.isAfter(DateTime.now())) {
 throw StateError('يجب أن يكون الموعد الأول بتاريخ ووقت قادمين.');
 }
-
-final appointment = <String, dynamic>{
-'id': appointmentReference.id,
-'organizationId': doctor.organizationId,
-'doctorId': doctorId,
-'patientId': patient.id,
-'patientUid': null,
-'patientName': patient.name,
-'patientInitials': patient.initials,
-'clinicId': clinicId,
-'date': Timestamp.fromDate(appointmentDateTime),
-'time': _formatTime(appointmentTime),
-'type': 'زيارة',
-'status': 'upcoming',
-'notes': '',
-'createdAt': FieldValue.serverTimestamp(),
-'updatedAt': FieldValue.serverTimestamp(),
-'createdBy': invitedBy,
-};
-
-final emailIndexReference = _service.patientEmailIndexDocument(trimmedEmail);
-
-await _service.firestore.runTransaction((transaction) async {
-    final emailIndex = await transaction.get(emailIndexReference);
-    if (emailIndex.exists) {
-        throw StateError('يوجد سجل للمريض بهذا البريد ضمن المؤسسة الحالية.');
-    }
-
-    transaction.set(patientReference, patient.toMap());
-    transaction.set(appointmentReference, appointment);
-    transaction.set(emailIndexReference, {
-        'email': trimmedEmail,
-        'organizationId': doctor.organizationId,
-        'doctorId': doctor.id,
-        'clinicId': clinicId,
-        'patientId': patient.id,
-        'createdAt': FieldValue.serverTimestamp(),
-    });
-
-// Store the initial medical note in the permanent notes subcollection.
-final initialNoteText = medicalNotes?.trim() ?? '';
-
-if (initialNoteText.isNotEmpty) {
-final noteReference = _service
-    .medicalNotesCollection(patient.organizationId, patient.id)
-    .doc();
-
-        transaction.set(noteReference, {
-            'text': initialNoteText,
-            'createdAt': FieldValue.serverTimestamp(),
-            'doctorUid': currentUid,
-            'doctorName': doctor.name,
-        });
-    }
+try {
+final result = await _functions.httpsCallable('registerPatientVisit').call({
+  'name': normalizedName,
+  'email': trimmedEmail,
+  'problemLocation': problemLocation?.trim() ?? '',
+  'medicalNotes': medicalNotes?.trim() ?? '',
+  'appointmentAtMillis': appointmentDateTime.millisecondsSinceEpoch,
+  'appointmentTime': _formatTime(appointmentTime),
 });
+final resultData = Map<String, dynamic>.from(result.data as Map);
+final patientData = Map<String, dynamic>.from(resultData['patient'] as Map);
+return Patient.fromMap(patientData);
+} on FirebaseFunctionsException catch (error) {
+final details = error.details is Map
+    ? Map<String, dynamic>.from(error.details as Map)
+    : const <String, dynamic>{};
+final candidates = details['candidates'];
+if (details['reason'] == 'name_review' && candidates is List) {
+  final labels = candidates
+      .whereType<Map>()
+      .map((candidate) =>
+          '${candidate['name'] ?? 'اسم غير متاح'} (${candidate['email'] ?? 'بريد غير متاح'})')
+      .join('، ');
+  throw StateError('يوجد سجل مشابه يحتاج مراجعة يدوية: $labels');
 }
-
-return patient;
+if (details['reason'] == 'duplicate_email' && candidates is List) {
+  final labels = candidates
+      .whereType<Map>()
+      .map((candidate) =>
+          '${candidate['name'] ?? 'اسم غير متاح'} (${candidate['email'] ?? 'بريد غير متاح'})')
+      .join('، ');
+  throw StateError('توجد سجلات بهذا البريد تحتاج مراجعة يدوية: $labels');
+}
+throw StateError(error.message ?? 'تعذر إنشاء زيارة المريض.');
+}
 }
 
 Future<Patient?> fetchPatientById(
@@ -351,53 +290,20 @@ if (normalizedEmail.isEmpty) {
 return null;
 }
 
-final snapshot = await FirebaseFirestore.instance
-    .collectionGroup('patients')
-    .where('email', isEqualTo: normalizedEmail)
-    .where('status', isEqualTo: AccountStatus.pending.name)
-    .where('accountActivated', isEqualTo: false)
-    .where('firebaseUid', isEqualTo: null)
-    .get();
-
-Patient? pendingPatient;
-
-for (final document in snapshot.docs) {
-final data = document.data();
-
-final accountActivated = data['accountActivated'] == true;
-final status = data['status']?.toString();
-final firebaseUid = data['firebaseUid']?.toString();
-
-if (status == AccountStatus.pending.name &&
-!accountActivated &&
-(firebaseUid == null || firebaseUid.isEmpty)) {
-final organizationId = document.reference.parent.parent?.id;
-
-if (organizationId == null ||
-data['organizationId'] != organizationId ||
-data['doctorId'] is! String ||
-(data['doctorId'] as String).isEmpty ||
-data['id'] != document.id) {
-throw StateError(
-'بيانات سجل المريض غير مكتملة أو غير متطابقة.',
-);
+try {
+    final result = await _functions
+            .httpsCallable('findPendingPatientActivation')
+            .call({'email': normalizedEmail});
+    final resultData = Map<String, dynamic>.from(result.data as Map);
+    final patientData = Map<String, dynamic>.from(resultData['patient'] as Map);
+    return Patient.fromMap(patientData);
+} on FirebaseFunctionsException catch (error) {
+    if (error.details is Map &&
+            (error.details as Map)['reason'] == 'not_found') {
+        return null;
+    }
+    throw StateError(error.message ?? 'تعذر التحقق من سجل تفعيل المريض.');
 }
-
-if (pendingPatient != null) {
-throw StateError(
-'يوجد أكثر من سجل مريض بنفس البريد الإلكتروني. '
-'يجب أن يكون البريد مرتبطًا بسجل مريض واحد فقط.',
-);
-}
-
-pendingPatient = Patient.fromMap({
-...data,
-'id': document.id,
-});
-}
-}
-
-return pendingPatient;
 }
 
 Future<void> savePatient(Patient patient) async {
@@ -582,13 +488,15 @@ throw StateError(
 );
 }
 
-final emailIndexReference = _service.patientEmailIndexDocument(normalizedEmail);
+final emailIndexReference = _service.patientEmailIndexDocument(
+    patient.organizationId,
+    normalizedEmail,
+);
 final emailIndexSnapshot = await emailIndexReference.get();
 final existingEmailIndex = emailIndexSnapshot.data();
 if (emailIndexSnapshot.exists &&
         (existingEmailIndex?['email'] != normalizedEmail ||
                 existingEmailIndex?['organizationId'] != patient.organizationId ||
-                existingEmailIndex?['doctorId'] != patient.doctorId ||
                 existingEmailIndex?['patientId'] != patient.id)) {
     throw StateError('هذا البريد مرتبط بالفعل بسجل مريض آخر.');
 }
@@ -596,8 +504,6 @@ if (emailIndexSnapshot.exists &&
 final emailIndexData = {
     'email': normalizedEmail,
     'organizationId': patient.organizationId,
-    'doctorId': patient.doctorId,
-    'clinicId': patient.clinicId,
     'patientId': patient.id,
     'createdAt': existingEmailIndex?['createdAt'] ?? FieldValue.serverTimestamp(),
 };
@@ -679,22 +585,4 @@ final period = time.period == DayPeriod.am ? 'ص' : 'م';
 return '$hour:$minute $period';
 }
 
-String _initials(String name) {
-final parts = name
-    .trim()
-    .split(RegExp(r'\s+'))
-    .where((part) => part.isNotEmpty)
-    .toList();
-
-if (parts.isEmpty) {
-return 'U';
-}
-
-if (parts.length == 1) {
-return parts.first.substring(0, 1).toUpperCase();
-}
-
-return '${parts.first.substring(0, 1).toUpperCase()}'
-'${parts.last.substring(0, 1).toUpperCase()}';
-}
 }

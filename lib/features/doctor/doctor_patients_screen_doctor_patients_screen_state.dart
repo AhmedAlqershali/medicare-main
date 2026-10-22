@@ -14,17 +14,25 @@ _loadPatients();
 Future<void> _loadPatients() async {
 final doctorId =
 FirebaseAuthRepository.instance.session.doctorId ?? '';
+final organizationId =
+FirebaseAuthRepository.instance.session.organizationId;
 
-if (doctorId.isEmpty) return;
+if (doctorId.isEmpty || organizationId == null || organizationId.isEmpty) return;
 
 List<Patient> patients;
+String? activeClinicId;
 
 try {
+final activeDoctor = await FirestoreDoctorRepository.instance
+    .fetchDoctorByIdForOrganization(organizationId, doctorId);
+if (activeDoctor == null || activeDoctor.clinicId == null) {
+throw StateError('لا توجد عيادة نشطة مرتبطة بالطبيب الحالي.');
+}
+activeClinicId = activeDoctor.clinicId;
 patients = await FirestorePatientRepository.instance
     .fetchPatientsForDoctor(
 doctorId,
-organizationId:
-FirebaseAuthRepository.instance.session.organizationId,
+organizationId: organizationId,
 );
 } catch (error) {
 if (mounted) {
@@ -42,8 +50,8 @@ _patients = patients.map((patient) {
 return DoctorPatient(
 id: patient.id,
 organizationId: patient.organizationId,
-doctorId: patient.doctorId,
-clinicId: patient.clinicId ?? '',
+doctorId: doctorId,
+clinicId: activeClinicId!,
 firebaseUid: patient.firebaseUid ?? '',
 name: patient.name,
 initials: patient.initials,

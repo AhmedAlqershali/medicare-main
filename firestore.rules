@@ -4,14 +4,14 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ============================================================
-              'problemLocation', 'updatedAt'
+    // AUTHENTICATION & HELPERS
     // ============================================================
 
     function signedIn() {
       return request.auth != null;
     }
 
-              'problemLocation', 'updatedAt'
+        function isAdmin() {
       return signedIn()
         && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
         && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'admin'
@@ -68,7 +68,8 @@ service cloud.firestore {
     function isPatientOfOrganization(orgId) {
       return currentUserProfile() != null
         && currentUserProfile().data.role == 'patient'
-        && currentUserProfile().data.organizationId == orgId;
+        && currentUserProfile().data.organizationId == orgId
+        && organizationIsActive(orgId);
     }
 
     function isCurrentDoctorForOrganization(orgId, doctorId) {
@@ -80,6 +81,7 @@ service cloud.firestore {
 
     function organizationUserForClinic(orgId, clinicId) {
       return activeOrganizationMember(orgId)
+        && clinicBelongsToOrganization(orgId, clinicId)
         && (
           currentUserProfile().data.get('clinicId', null) == null
           || currentUserProfile().data.get('clinicId', null) == clinicId
@@ -90,18 +92,38 @@ service cloud.firestore {
       return activeOrganizationMember(orgId)
         && (
           currentUserProfile().data.get('clinicId', null) == null
-          || currentUserProfile().data.get('clinicId', null)
-            == patientDocument(orgId, patientId).data.get('clinicId', null)
+          || (
+            clinicBelongsToOrganization(
+              orgId,
+              currentUserProfile().data.clinicId
+            )
+            && (
+              currentUserProfile().data.clinicId
+                == patientDocument(orgId, patientId).data.get('clinicId', null)
+              || (
+                exists(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId)/clinic_access_by_clinic/$(currentUserProfile().data.clinicId))
+                && get(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId)/clinic_access_by_clinic/$(currentUserProfile().data.clinicId)).data.organizationId == orgId
+                && get(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId)/clinic_access_by_clinic/$(currentUserProfile().data.clinicId)).data.patientId == patientId
+                && get(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId)/clinic_access_by_clinic/$(currentUserProfile().data.clinicId)).data.clinicId == currentUserProfile().data.clinicId
+              )
+            )
+          )
         );
     }
 
     function organizationUserForDoctor(orgId, doctorId) {
-      return isOrganizationMember(orgId)
+      return activeOrganizationMember(orgId)
         && exists(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId))
         && (
           currentUserProfile().data.get('clinicId', null) == null
-          || currentUserProfile().data.get('clinicId', null)
-            == get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.get('clinicId', null)
+          || (
+            clinicBelongsToOrganization(
+              orgId,
+              currentUserProfile().data.clinicId
+            )
+            && currentUserProfile().data.clinicId
+              == get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.get('clinicId', null)
+          )
         );
     }
 
@@ -127,11 +149,17 @@ service cloud.firestore {
     function clinicBelongsToOrganization(orgId, clinicId) {
       return clinicId is string
         && exists(/databases/$(database)/documents/organizations/$(orgId)/clinics/$(clinicId))
-        && get(/databases/$(database)/documents/organizations/$(orgId)/clinics/$(clinicId)).data.organizationId == orgId;
+        && get(/databases/$(database)/documents/organizations/$(orgId)/clinics/$(clinicId)).data.organizationId == orgId
+        && (
+          get(/databases/$(database)/documents/organizations/$(orgId)/clinics/$(clinicId)).data.get('status', null) == null
+          || get(/databases/$(database)/documents/organizations/$(orgId)/clinics/$(clinicId)).data.get('status', null) in ['active', 'نشطة', 'نشط']
+        );
     }
 
     function activeDoctorAssignedToClinic(orgId, doctorId, clinicId) {
-      return exists(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId))
+      return organizationIsActive(orgId)
+        && clinicBelongsToOrganization(orgId, clinicId)
+        && exists(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId))
         && get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.organizationId == orgId
         && get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.status == 'active'
         && get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.get('clinicId', null) == clinicId;
@@ -143,6 +171,7 @@ service cloud.firestore {
         && currentUserProfile().data.organizationId == orgId
         && currentUserProfile().data.get('doctorId', null) is string
         && isDoctorOfOrganization(orgId, currentUserProfile().data.doctorId)
+        && clinicBelongsToOrganization(orgId, clinicId)
         && get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(currentUserProfile().data.doctorId)).data.get('clinicId', null) == clinicId;
     }
 
@@ -201,12 +230,29 @@ service cloud.firestore {
       return signedIn()
         && isDoctorOfOrganization(orgId, doctorId)
         && exists(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId))
-        && patientDocument(orgId, patientId).data.doctorId == doctorId
         && patientDocument(orgId, patientId).data.organizationId == orgId
+        && get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.get('clinicId', null) is string
+        && clinicBelongsToOrganization(
+          orgId,
+          get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.clinicId
+        )
         && (
-          patientDocument(orgId, patientId).data.get('clinicId', null) == null
-          || patientDocument(orgId, patientId).data.get('clinicId', null)
-            == get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.get('clinicId', null)
+          (
+            patientDocument(orgId, patientId).data.doctorId == doctorId
+            && (
+              patientDocument(orgId, patientId).data.get('clinicId', null) == null
+              || patientDocument(orgId, patientId).data.clinicId
+                == get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.clinicId
+            )
+          )
+          || (
+            exists(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId)/clinic_access/$(doctorId))
+            && get(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId)/clinic_access/$(doctorId)).data.organizationId == orgId
+            && get(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId)/clinic_access/$(doctorId)).data.patientId == patientId
+            && get(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId)/clinic_access/$(doctorId)).data.doctorId == doctorId
+            && get(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId)/clinic_access/$(doctorId)).data.clinicId
+              == get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.clinicId
+          )
         );
     }
 
@@ -227,11 +273,20 @@ service cloud.firestore {
         && patientId is string
         && exists(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId))
         && patientDocument(orgId, patientId).data.organizationId == orgId
-        && patientDocument(orgId, patientId).data.doctorId == doctorId
         && (
-          patientDocument(orgId, patientId).data.get('clinicId', null) == null
-          || patientDocument(orgId, patientId).data.get('clinicId', null)
-            == get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.get('clinicId', null)
+          (
+            patientDocument(orgId, patientId).data.doctorId == doctorId
+            && (
+              patientDocument(orgId, patientId).data.get('clinicId', null) == null
+              || patientDocument(orgId, patientId).data.get('clinicId', null)
+                == get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.get('clinicId', null)
+            )
+          )
+          || (
+            exists(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId)/clinic_access/$(doctorId))
+            && get(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId)/clinic_access/$(doctorId)).data.organizationId == orgId
+            && get(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId)/clinic_access/$(doctorId)).data.clinicId == clinicId
+          )
         )
         && (
           (
@@ -253,11 +308,15 @@ service cloud.firestore {
       return isDoctorPatientAccess(orgId, doctorId, patientId)
         && clinicId is string
         && clinicBelongsToOrganization(orgId, clinicId)
+        && get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.get('clinicId', null) == clinicId
         && (
           patientDocument(orgId, patientId).data.get('clinicId', null) == null
           || patientDocument(orgId, patientId).data.get('clinicId', null) == clinicId
-        )
-        && get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.get('clinicId', null) == clinicId;
+          || (
+            exists(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId)/clinic_access/$(doctorId))
+            && get(/databases/$(database)/documents/organizations/$(orgId)/patients/$(patientId)/clinic_access/$(doctorId)).data.clinicId == clinicId
+          )
+        );
     }
 
     function isCurrentPatientAccess(orgId, patientId) {
@@ -429,7 +488,7 @@ service cloud.firestore {
 
     match /organizations/{organizationId}/invitations/{invitationId} {
       allow read: if signedIn() && (
-        ownsOrganization(organizationId)
+        ownsActiveOrganization(organizationId)
         || (
           verifiedEmail()
           &&
@@ -522,7 +581,7 @@ service cloud.firestore {
 
     match /organizations/{organizationId}/doctors/{doctorId} {
       allow read: if signedIn() && (
-        ownsOrganization(organizationId)
+        ownsActiveOrganization(organizationId)
         || organizationUserForDoctor(organizationId, doctorId)
         || isPatientOfOrganization(organizationId)
         || isDoctorOfOrganization(organizationId, doctorId)
@@ -567,7 +626,7 @@ service cloud.firestore {
             ])
           )
           || (
-            ownsOrganization(organizationId)
+            ownsActiveOrganization(organizationId)
             && request.resource.data.get('firebaseUid', null) == resource.data.get('firebaseUid', null)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'name', 'specialty', 'status', 'initials', 'availability',
@@ -625,31 +684,7 @@ service cloud.firestore {
         || isAdmin()
       );
 
-      allow create: if signedIn()
-        && currentUserProfile() != null
-        && currentUserProfile().data.role == 'doctor'
-        && currentUserProfile().data.organizationId == organizationId
-        && currentUserProfile().data.doctorId == request.resource.data.doctorId
-        && isDoctorOfOrganization(organizationId, request.resource.data.doctorId)
-        && request.resource.data.organizationId == organizationId
-        && request.resource.data.id == patientId
-        && request.resource.data.email is string
-        && request.resource.data.keys().hasOnly([
-          'id', 'name', 'email', 'doctorId', 'organizationId', 'clinicId',
-          'status', 'accountActivated', 'initials', 'firebaseUid', 'phone',
-          'birthDate', 'gender', 'notes', 'problemLocation', 'medicalNotes',
-          'medicalNotesHistory', 'createdAt', 'updatedAt'
-        ])
-        && request.resource.data.status == 'pending'
-        && request.resource.data.get('accountActivated', false) == false
-        && request.resource.data.get('firebaseUid', null) == null
-        && clinicBelongsToOrganization(
-          organizationId,
-          request.resource.data.get('clinicId', null)
-        )
-        && get(/databases/$(database)/documents/organizations/$(organizationId)/doctors/$(request.resource.data.doctorId)).data.get('clinicId', null) == request.resource.data.clinicId
-        && getAfter(/databases/$(database)/documents/patient_email_index/$(request.resource.data.email)).data.patientId == patientId
-        && getAfter(/databases/$(database)/documents/patient_email_index/$(request.resource.data.email)).data.organizationId == organizationId;
+      allow create: if false;
 
       allow update: if signedIn()
         && request.resource.data.organizationId == resource.data.organizationId
@@ -669,7 +704,7 @@ service cloud.firestore {
             ])
           )
           || (
-            ownsOrganization(organizationId)
+            ownsActiveOrganization(organizationId)
             && request.resource.data.get('firebaseUid', null) == resource.data.get('firebaseUid', null)
             && request.resource.data.get('accountActivated', false) == resource.data.get('accountActivated', false)
             && request.resource.data.status == resource.data.status
@@ -723,63 +758,91 @@ service cloud.firestore {
 
     // Allow a patient to find their pending activation record by email.
     match /{path=**}/patients/{patientId} {
-      allow read: if verifiedEmail()
-        && resource.data.get('organizationId', null) is string
-        && organizationIsActive(resource.data.organizationId)
-        && resource.data.get('email', null) == request.auth.token.email
-        && resource.data.get('status', null) == 'pending'
-        && resource.data.get('accountActivated', false) == false
-        && resource.data.get('firebaseUid', null) == null;
+      allow read: if false;
     }
 
-    match /patient_email_index/{emailKey} {
+    match /organizations/{organizationId}/patient_email_index/{emailKey} {
       allow get: if isAdmin()
-        || (verifiedEmail() && request.auth.token.email == emailKey)
+        || ownsActiveOrganization(organizationId)
         || (
-          !exists(/databases/$(database)/documents/patient_email_index/$(emailKey))
-          && currentVerifiedDoctor()
+          verifiedEmail()
+          && request.auth.token.email == emailKey
+          && (
+            !exists(/databases/$(database)/documents/organizations/$(organizationId)/patient_email_index/$(emailKey))
+            || (
+              resource.data.organizationId == organizationId
+              && resource.data.email == emailKey
+              && resource.data.patientId is string
+              && exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId))
+              && get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)).data.email == emailKey
+            )
+          )
         )
-        || ownsActiveOrganization(resource.data.organizationId)
-        || isDoctorOfOrganization(
-          resource.data.organizationId,
-          resource.data.doctorId
+        || (
+          resource.data.get('patientId', null) is string
+          && resource.data.organizationId == organizationId
+          && resource.data.email == emailKey
+          && currentUserProfile() != null
+          && currentUserProfile().data.role == 'doctor'
+          && currentUserProfile().data.organizationId == organizationId
+          && isDoctorPatientAccess(
+            organizationId,
+            currentUserProfile().data.get('doctorId', null),
+            resource.data.patientId
+          )
         );
 
       allow list: if false;
 
       allow create: if isAdmin() || (
-        currentVerifiedDoctor()
-        && currentUserProfile().data.organizationId == request.resource.data.organizationId
-        && isDoctorOfOrganization(
-          request.resource.data.organizationId,
-          request.resource.data.doctorId
-        )
-        && request.resource.data.doctorId == currentUserProfile().data.doctorId
-        && request.resource.data.email == emailKey
-        && request.resource.data.keys().hasOnly([
-          'email', 'organizationId', 'doctorId', 'clinicId', 'patientId', 'createdAt'
-        ])
-        && request.resource.data.get('clinicId', null) is string
-        && request.resource.data.get('patientId', null) is string
-        && getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.email == emailKey
-        && getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.doctorId == request.resource.data.doctorId
-        && getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.clinicId == request.resource.data.clinicId
-      ) || (
         verifiedEmail()
         && request.auth.token.email == emailKey
         && request.resource.data.email == emailKey
+        && request.resource.data.organizationId == organizationId
+        && request.resource.data.patientId is string
         && request.resource.data.keys().hasOnly([
-          'email', 'organizationId', 'doctorId', 'clinicId', 'patientId', 'createdAt'
+          'email', 'organizationId', 'patientId', 'createdAt'
         ])
-        && getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.email == emailKey
-        && getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.firebaseUid == request.auth.uid
-        && getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.accountActivated == true
-        && getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)/patients/$(request.resource.data.patientId)).data.status == 'active'
+        && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)).data.email == emailKey
+        && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)).data.firebaseUid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)).data.accountActivated == true
+        && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)).data.status == 'active'
         && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.patientId == request.resource.data.patientId
-        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == request.resource.data.organizationId
-        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.doctorId == request.resource.data.doctorId
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == organizationId
         && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'patient'
       );
+
+      allow update, delete: if isAdmin();
+    }
+
+    match /organizations/{organizationId}/patients/{patientId}/clinic_access/{doctorId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /organizations/{organizationId}/patients/{patientId}/clinic_access_by_clinic/{clinicId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /patient_email_index/{emailKey} {
+      allow get: if isAdmin()
+        || ownsActiveOrganization(resource.data.organizationId)
+        || (
+          resource.data.organizationId is string
+          && resource.data.patientId is string
+          && resource.data.doctorId is string
+          && resource.data.email == emailKey
+          && exists(/databases/$(database)/documents/organizations/$(resource.data.organizationId)/patients/$(resource.data.patientId))
+          && get(/databases/$(database)/documents/organizations/$(resource.data.organizationId)/patients/$(resource.data.patientId)).data.email == emailKey
+          && isDoctorPatientAccess(
+            resource.data.organizationId,
+            resource.data.doctorId,
+            resource.data.patientId
+          )
+        );
+
+      allow list: if false;
+
+      allow create: if false;
 
       allow update, delete: if isAdmin();
     }
@@ -834,6 +897,24 @@ service cloud.firestore {
               getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)).data.get('clinicId', null)
             )
           )
+          || (
+            isDoctorOfOrganization(
+              organizationId,
+              currentUserProfile().data.doctorId
+            )
+            && existsAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId))
+            && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)).data.organizationId == organizationId
+            && existsAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/clinic_access/$(currentUserProfile().data.doctorId))
+            && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/clinic_access/$(currentUserProfile().data.doctorId)).data.organizationId == organizationId
+            && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/clinic_access/$(currentUserProfile().data.doctorId)).data.patientId == patientId
+            && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/clinic_access/$(currentUserProfile().data.doctorId)).data.doctorId == currentUserProfile().data.doctorId
+            && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/clinic_access/$(currentUserProfile().data.doctorId)).data.clinicId
+              == get(/databases/$(database)/documents/organizations/$(organizationId)/doctors/$(currentUserProfile().data.doctorId)).data.get('clinicId', null)
+            && clinicBelongsToOrganization(
+              organizationId,
+              getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/clinic_access/$(currentUserProfile().data.doctorId)).data.clinicId
+            )
+          )
         );
 
       allow update, delete: if false;
@@ -874,6 +955,11 @@ service cloud.firestore {
           || (
             patientDocument(organizationId, patientId).data.get('clinicId', null) == null
             && request.resource.data.clinicId == get(/databases/$(database)/documents/organizations/$(organizationId)/doctors/$(currentUserProfile().data.doctorId)).data.get('clinicId', null)
+          )
+          || (
+            exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/clinic_access/$(currentUserProfile().data.doctorId))
+            && get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/clinic_access/$(currentUserProfile().data.doctorId)).data.organizationId == organizationId
+            && get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/clinic_access/$(currentUserProfile().data.doctorId)).data.clinicId == request.resource.data.clinicId
           )
         )
         && request.resource.data.title is string
@@ -1037,6 +1123,11 @@ service cloud.firestore {
             patientDocument(organizationId, patientId).data.get('clinicId', null) == null
             && request.resource.data.clinicId == get(/databases/$(database)/documents/organizations/$(organizationId)/doctors/$(request.resource.data.doctorId)).data.get('clinicId', null)
           )
+          || (
+            exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/clinic_access/$(request.resource.data.doctorId))
+            && get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/clinic_access/$(request.resource.data.doctorId)).data.organizationId == organizationId
+            && get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/clinic_access/$(request.resource.data.doctorId)).data.clinicId == request.resource.data.clinicId
+          )
         )
         && request.resource.data.visitAt <= request.time
         && request.resource.data.visitAt is timestamp
@@ -1122,7 +1213,13 @@ service cloud.firestore {
           activeOrganizationMember(organizationId)
           && (
             currentUserProfile().data.get('clinicId', null) == null
-            || currentUserProfile().data.get('clinicId', null) == resource.data.get('clinicId', null)
+            || (
+              clinicBelongsToOrganization(
+                organizationId,
+                currentUserProfile().data.clinicId
+              )
+              && currentUserProfile().data.clinicId == resource.data.get('clinicId', null)
+            )
           )
         )
         || (
@@ -1139,8 +1236,17 @@ service cloud.firestore {
           &&
           isCurrentPatientAccess(organizationId, resource.data.patientId)
           && resource.data.organizationId == organizationId
-          && patientDocument(organizationId, resource.data.patientId).data.doctorId == resource.data.doctorId
-          && patientDocument(organizationId, resource.data.patientId).data.get('clinicId', null) == resource.data.get('clinicId', null)
+          && (
+            (
+              patientDocument(organizationId, resource.data.patientId).data.doctorId == resource.data.doctorId
+              && patientDocument(organizationId, resource.data.patientId).data.get('clinicId', null) == resource.data.get('clinicId', null)
+            )
+            || (
+              exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)/clinic_access/$(resource.data.doctorId))
+              && get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)/clinic_access/$(resource.data.doctorId)).data.organizationId == organizationId
+              && get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(resource.data.patientId)/clinic_access/$(resource.data.doctorId)).data.clinicId == resource.data.get('clinicId', null)
+            )
+          )
           && (
             resource.data.get('patientUid', null) == null
             || resource.data.patientUid == request.auth.uid
@@ -1167,8 +1273,19 @@ service cloud.firestore {
           'createdAt', 'updatedAt', 'createdBy'
         ])
         && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)).data.organizationId == organizationId
-        && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)).data.doctorId == request.resource.data.doctorId
-        && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)).data.get('clinicId', null) == request.resource.data.clinicId
+        && (
+          (
+            getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)).data.doctorId == request.resource.data.doctorId
+            && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)).data.get('clinicId', null) == request.resource.data.clinicId
+          )
+          || (
+            existsAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)/clinic_access/$(request.resource.data.doctorId))
+            && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)/clinic_access/$(request.resource.data.doctorId)).data.organizationId == organizationId
+            && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)/clinic_access/$(request.resource.data.doctorId)).data.patientId == request.resource.data.patientId
+            && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)/clinic_access/$(request.resource.data.doctorId)).data.doctorId == request.resource.data.doctorId
+            && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)/clinic_access/$(request.resource.data.doctorId)).data.clinicId == request.resource.data.clinicId
+          )
+        )
         && clinicBelongsToOrganization(organizationId, request.resource.data.clinicId)
         && activeDoctorAssignedToClinic(
           organizationId,
@@ -1247,7 +1364,6 @@ service cloud.firestore {
         && collectionName in [
           'clinics',
           'doctors',
-          'patients',
           'appointments'
         ];
     }
