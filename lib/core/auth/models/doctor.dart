@@ -9,6 +9,7 @@ class Doctor {
     required this.email,
     required this.organizationId,
     required this.specialty,
+    this.specialtyId,
     required this.status,
     required this.initials,
     this.availability = const {},
@@ -23,6 +24,7 @@ class Doctor {
     this.experience = '',
     this.bio = '',
     this.services = const [],
+    this.serviceIds = const [],
     this.firebaseUid,
     this.createdAt,
     this.updatedAt,
@@ -33,6 +35,7 @@ class Doctor {
   final String email;
   final String organizationId;
   final String specialty;
+  final String? specialtyId;
   final AccountStatus status;
   final String initials;
 
@@ -51,6 +54,7 @@ class Doctor {
   final String experience;
   final String bio;
   final List<String> services;
+  final List<String> serviceIds;
 
   final String? firebaseUid;
 
@@ -64,6 +68,8 @@ class Doctor {
       'email': email,
       'organizationId': organizationId,
       'specialty': specialty,
+      if (specialtyId != null && specialtyId!.isNotEmpty)
+        'specialtyId': specialtyId,
       'status': status.name,
       'initials': initials,
       'availability': availability,
@@ -78,6 +84,7 @@ class Doctor {
       'experience': experience,
       'bio': bio,
       'services': services,
+      if (serviceIds.isNotEmpty) 'serviceIds': serviceIds,
     };
 
     map['firebaseUid'] = firebaseUid;
@@ -100,6 +107,7 @@ class Doctor {
         email: map['email'] as String? ?? '',
         organizationId: map['organizationId'] as String? ?? '',
         specialty: map['specialty'] as String? ?? '',
+        specialtyId: map['specialtyId'] as String?,
         status: _status(map['status']),
         initials: map['initials'] as String? ?? '',
         availability: _availability(map['availability']),
@@ -116,6 +124,9 @@ class Doctor {
         services: map['services'] is List
             ? (map['services'] as List).map((item) => item.toString()).toList()
             : const [],
+        serviceIds: map['serviceIds'] is List
+          ? (map['serviceIds'] as List).whereType<String>().toList()
+          : const [],
         firebaseUid: map['firebaseUid'] as String?,
         createdAt: _dateFromMap(map['createdAt']),
         updatedAt: _dateFromMap(map['updatedAt']),

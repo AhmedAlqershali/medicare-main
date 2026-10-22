@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../../core/auth/models/clinical_follow_up.dart';
 import '../../core/auth/models/medical_case.dart';
+import '../../core/auth/models/medical_catalog_entry.dart';
 import '../../core/auth/models/pregnancy_details.dart';
 import '../../core/firestore/appointment_date_time.dart';
 import '../../core/firestore/repositories/firestore_appointment_repository.dart';
 import '../../core/firestore/repositories/firestore_medical_case_repository.dart';
+import '../../core/firestore/repositories/firestore_medical_catalog_repository.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/empty_state.dart';
+import '../../core/widgets/searchable_catalog_field.dart';
 
 class MedicalCasesScreen extends StatefulWidget {
   const MedicalCasesScreen({
@@ -30,6 +33,7 @@ class MedicalCasesScreen extends StatefulWidget {
 
 class _MedicalCasesScreenState extends State<MedicalCasesScreen> {
   List<MedicalCase> _cases = const [];
+  Map<String, String> _conditionNames = const {};
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -50,8 +54,23 @@ class _MedicalCasesScreenState extends State<MedicalCasesScreen> {
         organizationId: widget.organizationId,
         patientId: widget.patientId,
       );
+      var conditions = <MedicalCatalogEntry>[];
+      try {
+        conditions = await FirestoreMedicalCatalogRepository.instance
+            .fetchEntries(
+          kind: MedicalCatalogKind.condition,
+          includeInactive: true,
+        );
+      } catch (_) {
+        // Catalog labels must not block access to medical records.
+      }
       if (!mounted) return;
-      setState(() => _cases = cases);
+      setState(() {
+        _cases = cases;
+        _conditionNames = {
+          for (final condition in conditions) condition.id: condition.displayName,
+        };
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = error.toString());
@@ -62,9 +81,17 @@ class _MedicalCasesScreenState extends State<MedicalCasesScreen> {
 
   Future<void> _createCase() async {
     if (_saving) return;
+    var conditions = <MedicalCatalogEntry>[];
+    try {
+      conditions = await FirestoreMedicalCatalogRepository.instance
+          .fetchEntries(kind: MedicalCatalogKind.condition);
+    } catch (_) {
+      if (mounted) _showMessage('تعذر تحميل التصنيفات؛ يمكنك تسجيل الحالة دون تصنيف.');
+    }
+    if (!mounted) return;
     final values = await showDialog<Map<String, Object?>>(
       context: context,
-      builder: (_) => const _MedicalCaseFormDialog(),
+      builder: (_) => _MedicalCaseFormDialog(conditions: conditions),
     );
     if (values == null || !mounted) return;
 
@@ -75,6 +102,7 @@ class _MedicalCasesScreenState extends State<MedicalCasesScreen> {
         patientId: widget.patientId,
         title: values['title']! as String,
         type: values['type']! as String,
+        conditionId: values['conditionId'] as String?,
         startedAt: values['startedAt']! as DateTime,
         diagnosis: values['diagnosis']! as String,
         assessment: values['assessment']! as String,
@@ -96,6 +124,7 @@ class _MedicalCasesScreenState extends State<MedicalCasesScreen> {
         builder: (_) => MedicalCaseDetailsScreen(
           medicalCase: medicalCase,
           patientName: widget.patientName,
+          conditionName: _conditionNames[medicalCase.conditionId],
           allowClinicalWrites: widget.allowClinicalWrites,
         ),
       ),
@@ -177,9 +206,7 @@ class _MedicalCasesScreenState extends State<MedicalCasesScreen> {
     if (pregnancy == null) {
       return '${medicalCase.type} • ${_statusLabel(medicalCase.status)} • ${_formatDate(medicalCase.startedAt)}';
     }
-    final asOf = medicalCase.completedAt ??
-      medicalCase.archivedAt ??
-      DateTime.now();
+    final asOf = pregnancy.endedAt ?? DateTime.now();
     final progress = pregnancy.progressAt(asOf);
     final approximation = pregnancy.monthIsApproximate ? ' (تقريبي)' : '';
     return '${_statusLabel(medicalCase.status)} • ${progress.weeks} أسبوع و${progress.days} يوم • الشهر التقويمي ${progress.calendarMonth}$approximation';
@@ -191,11 +218,13 @@ class MedicalCaseDetailsScreen extends StatefulWidget {
     super.key,
     required this.medicalCase,
     required this.patientName,
+    this.conditionName,
     this.allowClinicalWrites = false,
   });
 
   final MedicalCase medicalCase;
   final String patientName;
+  final String? conditionName;
   final bool allowClinicalWrites;
 
   @override
@@ -308,6 +337,36 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
     }
   }
 
+  Future<void> _recordPregnancyOutcome() async {
+    if (_saving) return;
+    final values = await showDialog<Map<String, Object?>>(
+      context: context,
+      builder: (_) => const _PregnancyOutcomeDialog(),
+    );
+    if (values == null || !mounted) return;
+    setState(() => _saving = true);
+    try {
+      await FirestoreMedicalCaseRepository.instance.recordPregnancyOutcome(
+        medicalCase: _medicalCase,
+        outcome: values['outcome']! as String,
+        endedAt: values['endedAt']! as DateTime,
+      );
+      final refreshed = await FirestoreMedicalCaseRepository.instance.fetchCase(
+        organizationId: _medicalCase.organizationId,
+        patientId: _medicalCase.patientId,
+        caseId: _medicalCase.id,
+      );
+      if (refreshed != null && mounted) {
+        setState(() => _medicalCase = refreshed);
+      }
+      await _loadDetails();
+    } catch (error) {
+      if (mounted) _showMessage('تعذر تسجيل نتيجة الحمل: $error');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   void _showMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
@@ -328,9 +387,7 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
 
   List<Widget> _pregnancyFields(MedicalCase medicalCase) {
     final pregnancy = medicalCase.pregnancyDetails!;
-    final asOf = medicalCase.completedAt ??
-        medicalCase.archivedAt ??
-        DateTime.now();
+    final asOf = pregnancy.endedAt ?? DateTime.now();
     final progress = pregnancy.progressAt(asOf);
     return [
       _field(
@@ -341,6 +398,13 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
         'الشهر الحالي',
         'الشهر التقويمي ${progress.calendarMonth}${pregnancy.monthIsApproximate ? ' (تقديري)' : ''}',
       ),
+      if (pregnancy.outcome == null)
+        _field(
+          'المدة حتى الشهر التاسع',
+          progress.calendarMonth >= 9
+              ? 'بلغ الشهر التاسع؛ يلزم تقييم الطبيب'
+              : '${progress.monthsUntilNinthMonth} أشهر متبقية${pregnancy.monthIsApproximate ? ' (تقديري)' : ''}',
+        ),
       _field(
         switch (pregnancy.datingMethod) {
           PregnancyDatingMethod.lastMenstrualPeriod => 'تاريخ آخر دورة شهرية',
@@ -355,11 +419,23 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
         'موعد الولادة المتوقع (تقديري)',
         _formatDate(pregnancy.expectedDueDate),
       ),
+      if (pregnancy.outcome != null)
+        _field('نتيجة الحمل', _pregnancyOutcomeLabel(pregnancy.outcome!)),
+      if (pregnancy.endedAt != null)
+        _field('تاريخ انتهاء الحمل', _formatDate(pregnancy.endedAt!)),
     ];
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) {
+    final pregnancy = _medicalCase.pregnancyDetails;
+    final pregnancyProgress = pregnancy?.progressAt(DateTime.now());
+    final needsPregnancyReview = widget.allowClinicalWrites &&
+        pregnancyProgress != null &&
+        pregnancyProgress.calendarMonth >= 9 &&
+        pregnancy?.outcome == null &&
+        _medicalCase.status != 'archived';
+    return Scaffold(
         appBar: AppBar(title: const Text('تفاصيل الحالة')),
         body: SafeArea(
           child: _loading
@@ -390,6 +466,42 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
                               const SizedBox(height: AppSpacing.md),
                               if (_medicalCase.pregnancyDetails != null)
                                 ..._pregnancyFields(_medicalCase),
+                              if (_medicalCase.conditionId != null)
+                                _field(
+                                  'تصنيف الدليل، وليس تشخيصًا',
+                                  widget.conditionName ?? 'عنصر غير متاح في الدليل',
+                                ),
+                              if (needsPregnancyReview) ...[
+                                const SizedBox(height: AppSpacing.sm),
+                                Container(
+                                  padding: const EdgeInsets.all(AppSpacing.md),
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .errorContainer,
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(
+                                        Icons.warning_amber_rounded,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onErrorContainer,
+                                      ),
+                                      const SizedBox(width: AppSpacing.sm),
+                                      Expanded(
+                                        child: Text(
+                                          'وصل الحمل إلى الشهر التاسع. راجع الحالة وسجّل نتيجتها؛ بلوغ هذا الشهر لا يعني انتهاء الحمل.',
+                                          style: TextStyle(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onErrorContainer,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                               _field(
                                 _medicalCase.pregnancyDetails == null
                                     ? 'تاريخ بداية الحالة'
@@ -407,9 +519,9 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
                               if (_medicalCase.archiveReason != null)
                                 _field(
                                   'سبب الأرشفة',
-                                  _medicalCase.archiveReason ==
-                                          'pregnancy_period_elapsed'
-                                      ? 'انتهاء الفترة المحددة للحمل'
+                                    _medicalCase.archiveReason ==
+                                      'pregnancy_ended_and_period_elapsed'
+                                    ? 'انتهاء الحمل ومضي فترة الأرشفة'
                                       : _medicalCase.archiveReason!,
                                 ),
                             ],
@@ -430,13 +542,23 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
                                   icon: const Icon(Icons.visibility_outlined),
                                   label: const Text('بدء المتابعة'),
                                 ),
-                              if (!_medicalCase.isClosed)
+                              if (!_medicalCase.isClosed &&
+                                  _medicalCase.type != 'pregnancy')
                                 OutlinedButton.icon(
                                   onPressed: _saving
                                       ? null
                                       : () => _changeStatus('completed'),
                                   icon: const Icon(Icons.check_circle_outline),
                                   label: const Text('إكمال الحالة'),
+                                ),
+                              if (_medicalCase.type == 'pregnancy' &&
+                                  _medicalCase.pregnancyDetails?.outcome == null)
+                                OutlinedButton.icon(
+                                  onPressed: _saving
+                                      ? null
+                                      : _recordPregnancyOutcome,
+                                  icon: const Icon(Icons.fact_check_outlined),
+                                  label: const Text('تسجيل نتيجة الحمل'),
                                 ),
                               if (!_medicalCase.isClosed &&
                                   _medicalCase.type != 'pregnancy')
@@ -514,10 +636,22 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
                     ),
         ),
       );
+  }
+
+  String _pregnancyOutcomeLabel(String outcome) => switch (outcome) {
+        'liveBirth' => 'ولادة حية',
+        'stillbirth' => 'ولادة ميتة',
+        'miscarriage' => 'إجهاض',
+        'ectopicPregnancy' => 'حمل خارج الرحم',
+        'other' => 'نتيجة أخرى',
+        _ => outcome,
+      };
 }
 
 class _MedicalCaseFormDialog extends StatefulWidget {
-  const _MedicalCaseFormDialog();
+  const _MedicalCaseFormDialog({required this.conditions});
+
+  final List<MedicalCatalogEntry> conditions;
 
   @override
   State<_MedicalCaseFormDialog> createState() => _MedicalCaseFormDialogState();
@@ -532,6 +666,7 @@ class _MedicalCaseFormDialogState extends State<_MedicalCaseFormDialog> {
   DateTime? _pregnancyReferenceDate;
   PregnancyDatingMethod? _datingMethod;
   bool _isPregnancy = false;
+  MedicalCatalogEntry? _condition;
 
   @override
   void dispose() {
@@ -686,6 +821,13 @@ class _MedicalCaseFormDialogState extends State<_MedicalCaseFormDialog> {
                       trailing: const Icon(Icons.calendar_month_outlined),
                       onTap: _pickDate,
                     ),
+                  SearchableCatalogField(
+                    label: 'تصنيف الحالة من الدليل (اختياري، ليس تشخيصًا)',
+                    entries: widget.conditions,
+                    selectedId: _condition?.id,
+                    onChanged: (entry) => setState(() => _condition = entry),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
                   _input(2, 'التشخيص'),
                   _input(3, 'التقييم الطبي', maxLines: 3),
                   _input(4, 'الملاحظات', maxLines: 3),
@@ -748,6 +890,7 @@ class _MedicalCaseFormDialogState extends State<_MedicalCaseFormDialog> {
               Navigator.of(context).pop(<String, Object?>{
                 'title': _controllers[0].text,
                 'type': _isPregnancy ? 'pregnancy' : _controllers[1].text,
+                'conditionId': _condition?.id,
                 'startedAt': _startedAt,
                 'diagnosis': _controllers[2].text,
                 'assessment': _controllers[3].text,
@@ -787,6 +930,75 @@ class _MedicalCaseFormDialogState extends State<_MedicalCaseFormDialog> {
                   : null
               : null,
         ),
+      );
+}
+
+class _PregnancyOutcomeDialog extends StatefulWidget {
+  const _PregnancyOutcomeDialog();
+
+  @override
+  State<_PregnancyOutcomeDialog> createState() => _PregnancyOutcomeDialogState();
+}
+
+class _PregnancyOutcomeDialogState extends State<_PregnancyOutcomeDialog> {
+  String? _outcome;
+  DateTime _endedAt = DateTime.now();
+
+  Future<void> _pickEndDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _endedAt,
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) setState(() => _endedAt = picked);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('تسجيل نتيجة الحمل'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DropdownButtonFormField<String>(
+              value: _outcome,
+              decoration: const InputDecoration(labelText: 'النتيجة'),
+              items: const [
+                DropdownMenuItem(value: 'liveBirth', child: Text('ولادة حية')),
+                DropdownMenuItem(value: 'stillbirth', child: Text('ولادة ميتة')),
+                DropdownMenuItem(value: 'miscarriage', child: Text('إجهاض')),
+                DropdownMenuItem(
+                  value: 'ectopicPregnancy',
+                  child: Text('حمل خارج الرحم'),
+                ),
+                DropdownMenuItem(value: 'other', child: Text('نتيجة أخرى')),
+              ],
+              onChanged: (value) => setState(() => _outcome = value),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('تاريخ انتهاء الحمل'),
+              subtitle: Text(_formatDate(_endedAt)),
+              trailing: const Icon(Icons.calendar_month_outlined),
+              onTap: _pickEndDate,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: _outcome == null
+                ? null
+                : () => Navigator.of(context).pop(<String, Object?>{
+                      'outcome': _outcome!,
+                      'endedAt': _endedAt,
+                    }),
+            child: const Text('حفظ النتيجة'),
+          ),
+        ],
       );
 }
 

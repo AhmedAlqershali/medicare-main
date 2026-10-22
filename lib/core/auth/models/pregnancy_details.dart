@@ -14,6 +14,8 @@ class PregnancyDetails {
     required this.gestationalDaysAtReference,
     required this.expectedDueDate,
     required this.archiveAt,
+    this.outcome,
+    this.endedAt,
   });
 
   final PregnancyDatingMethod datingMethod;
@@ -22,6 +24,8 @@ class PregnancyDetails {
   final int gestationalDaysAtReference;
   final DateTime expectedDueDate;
   final DateTime archiveAt;
+  final String? outcome;
+  final DateTime? endedAt;
 
   int get baselineGestationalDays =>
       gestationalWeeksAtReference * 7 + gestationalDaysAtReference;
@@ -34,6 +38,8 @@ class PregnancyDetails {
     required DateTime referenceDate,
     required int gestationalWeeks,
     required int gestationalDays,
+    String? outcome,
+    DateTime? endedAt,
   }) {
     final reference = _calendarDate(referenceDate);
     final baselineDays = gestationalWeeks * 7 + gestationalDays;
@@ -44,6 +50,8 @@ class PregnancyDetails {
       gestationalDaysAtReference: gestationalDays,
       expectedDueDate: reference.add(Duration(days: 280 - baselineDays)),
       archiveAt: reference.add(Duration(days: 294 - baselineDays)),
+      outcome: outcome,
+      endedAt: endedAt == null ? null : _calendarDate(endedAt),
     );
   }
 
@@ -59,6 +67,8 @@ class PregnancyDetails {
           (map['gestationalWeeksAtReference'] as num?)?.toInt() ?? 0,
       gestationalDays:
           (map['gestationalDaysAtReference'] as num?)?.toInt() ?? 0,
+        outcome: map['outcome'] as String?,
+        endedAt: map['endedAt'] == null ? null : _readDate(map['endedAt']),
     );
   }
 
@@ -69,6 +79,8 @@ class PregnancyDetails {
         'gestationalDaysAtReference': gestationalDaysAtReference,
         'expectedDueDate': Timestamp.fromDate(_calendarDate(expectedDueDate)),
         'archiveAt': Timestamp.fromDate(_calendarDate(archiveAt)),
+        if (outcome != null) 'outcome': outcome,
+        if (endedAt != null) 'endedAt': Timestamp.fromDate(_calendarDate(endedAt!)),
       };
 
   PregnancyProgress progressAt(DateTime date) {
@@ -94,7 +106,7 @@ class PregnancyDetails {
   }
 
   static DateTime _readDate(Object? value) {
-    if (value is Timestamp) return _calendarDate(value.toDate());
+    if (value is Timestamp) return _calendarDate(value.toDate().toUtc());
     if (value is DateTime) return _calendarDate(value);
     if (value is String) {
       final parsed = DateTime.tryParse(value);
@@ -117,4 +129,6 @@ class PregnancyProgress {
   final int weeks;
   final int days;
   final int calendarMonth;
+
+  int get monthsUntilNinthMonth => (9 - calendarMonth).clamp(0, 8).toInt();
 }

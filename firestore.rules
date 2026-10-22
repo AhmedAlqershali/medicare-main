@@ -18,6 +18,14 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true;
     }
 
+    function isActiveMedicalCatalogEntry(entryId, entryKind) {
+      return entryId is string
+        && exists(/databases/$(database)/documents/medical_catalog/$(entryId))
+        && get(/databases/$(database)/documents/medical_catalog/$(entryId)).data.kind == entryKind
+        && get(/databases/$(database)/documents/medical_catalog/$(entryId)).data.active == true
+        && get(/databases/$(database)/documents/medical_catalog/$(entryId)).data.archived == false;
+    }
+
     function verifiedEmail() {
       return signedIn()
         && request.auth.token.email_verified == true
@@ -358,6 +366,30 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /medical_catalog/{entryId} {
+      allow read: if signedIn();
+
+      allow create, update: if isAdmin()
+        && request.resource.data.id == entryId
+        && request.resource.data.kind in ['specialty', 'condition', 'service']
+        && (
+          !exists(/databases/$(database)/documents/medical_catalog/$(entryId))
+          || request.resource.data.kind == resource.data.kind
+        )
+        && request.resource.data.nameAr is string
+        && request.resource.data.nameEn is string
+        && request.resource.data.specialtyIds is list
+        && request.resource.data.active is bool
+        && request.resource.data.archived is bool
+        && (!request.resource.data.archived || !request.resource.data.active)
+        && request.resource.data.keys().hasOnly([
+          'id', 'kind', 'nameAr', 'nameEn', 'specialtyIds', 'parentId',
+          'active', 'archived', 'updatedAt'
+        ]);
+
+      allow delete: if false;
+    }
+
     // ============================================================
     // USERS
     // ============================================================
@@ -597,11 +629,18 @@ service cloud.firestore {
         && request.resource.data.status == 'pending'
         && request.resource.data.email is string
         && request.resource.data.get('firebaseUid', null) == null
+        && (
+          request.resource.data.get('specialtyId', null) == null
+          || isActiveMedicalCatalogEntry(
+            request.resource.data.specialtyId,
+            'specialty'
+          )
+        )
         && request.resource.data.keys().hasOnly([
-          'id', 'name', 'email', 'organizationId', 'specialty', 'status',
+          'id', 'name', 'email', 'organizationId', 'specialty', 'specialtyId', 'status',
           'initials', 'availability', 'clinic', 'clinicId', 'phone',
           'birthDate', 'gender', 'location', 'rating', 'reviews', 'experience',
-          'bio', 'services', 'firebaseUid', 'createdAt', 'updatedAt'
+          'bio', 'services', 'serviceIds', 'firebaseUid', 'createdAt', 'updatedAt'
         ])
         && (
           request.resource.data.get('clinicId', null) == null
@@ -616,22 +655,29 @@ service cloud.firestore {
         && request.resource.data.id == resource.data.id
         && request.resource.data.email == resource.data.email
         && (
+          request.resource.data.get('specialtyId', null) == null
+          || isActiveMedicalCatalogEntry(
+            request.resource.data.specialtyId,
+            'specialty'
+          )
+        )
+        && (
           (
             isAdmin()
             && request.resource.data.get('firebaseUid', null) == resource.data.get('firebaseUid', null)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'name', 'specialty', 'status', 'initials', 'availability',
+              'name', 'specialty', 'specialtyId', 'status', 'initials', 'availability',
               'clinic', 'clinicId', 'phone', 'birthDate', 'gender', 'location',
-              'rating', 'reviews', 'experience', 'bio', 'services', 'updatedAt'
+              'rating', 'reviews', 'experience', 'bio', 'services', 'serviceIds', 'updatedAt'
             ])
           )
           || (
             ownsActiveOrganization(organizationId)
             && request.resource.data.get('firebaseUid', null) == resource.data.get('firebaseUid', null)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'name', 'specialty', 'status', 'initials', 'availability',
+              'name', 'specialty', 'specialtyId', 'status', 'initials', 'availability',
               'clinic', 'clinicId', 'phone', 'birthDate', 'gender', 'location',
-              'rating', 'reviews', 'experience', 'bio', 'services', 'updatedAt'
+              'rating', 'reviews', 'experience', 'bio', 'services', 'serviceIds', 'updatedAt'
             ])
             && (
               request.resource.data.get('clinicId', null) == null
@@ -648,9 +694,9 @@ service cloud.firestore {
             && isDoctorOfOrganization(organizationId, doctorId)
             && request.resource.data.get('firebaseUid', null) == resource.data.get('firebaseUid', null)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'name', 'specialty', 'initials', 'availability', 'clinic',
+              'name', 'specialty', 'specialtyId', 'initials', 'availability', 'clinic',
               'phone', 'birthDate', 'gender', 'location', 'rating', 'reviews',
-              'experience', 'bio', 'services', 'updatedAt'
+              'experience', 'bio', 'services', 'serviceIds', 'updatedAt'
             ])
           )
           || (
@@ -966,6 +1012,13 @@ service cloud.firestore {
         && request.resource.data.title.size() > 0
         && request.resource.data.type is string
         && request.resource.data.type.size() > 0
+        && (
+          request.resource.data.get('conditionId', null) == null
+          || isActiveMedicalCatalogEntry(
+            request.resource.data.conditionId,
+            'condition'
+          )
+        )
         && request.resource.data.status == 'active'
         && request.resource.data.startedAt is timestamp
         && request.resource.data.startedAt <= request.time
@@ -1022,7 +1075,7 @@ service cloud.firestore {
         )
         && request.resource.data.keys().hasOnly([
           'id', 'patientId', 'organizationId', 'doctorId', 'clinicId',
-          'title', 'type', 'startedAt', 'diagnosis', 'assessment', 'notes',
+          'title', 'type', 'conditionId', 'startedAt', 'diagnosis', 'assessment', 'notes',
           'treatmentPlan', 'status', 'createdAt', 'pregnancy'
         ]);
 
@@ -1051,20 +1104,53 @@ service cloud.firestore {
         && request.resource.data.treatmentPlan == resource.data.treatmentPlan
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status', 'completedAt', 'archivedAt', 'updatedAt'
+          'status', 'completedAt', 'archivedAt', 'updatedAt', 'pregnancy'
         ])
         && (
           (
             resource.data.status in ['active', 'monitoring']
             && request.resource.data.status == 'monitoring'
             && request.resource.data.updatedAt == request.time
+            && request.resource.data.get('pregnancy', null) == resource.data.get('pregnancy', null)
             && request.resource.data.get('completedAt', null) == resource.data.get('completedAt', null)
             && request.resource.data.get('archivedAt', null) == resource.data.get('archivedAt', null)
           )
           || (
             resource.data.status in ['active', 'monitoring']
+            && resource.data.type != 'pregnancy'
             && request.resource.data.status == 'completed'
             && request.resource.data.completedAt == request.time
+            && request.resource.data.updatedAt == request.time
+            && request.resource.data.get('pregnancy', null) == resource.data.get('pregnancy', null)
+            && request.resource.data.get('archivedAt', null) == resource.data.get('archivedAt', null)
+          )
+          || (
+            resource.data.type == 'pregnancy'
+            && resource.data.status in ['active', 'monitoring', 'completed']
+            && request.resource.data.status == 'completed'
+            && request.resource.data.pregnancy is map
+            && request.resource.data.pregnancy.keys().hasOnly([
+              'datingMethod', 'referenceDate',
+              'gestationalWeeksAtReference', 'gestationalDaysAtReference',
+              'expectedDueDate', 'archiveAt', 'outcome', 'endedAt'
+            ])
+            && !resource.data.pregnancy.keys().hasAny(['outcome', 'endedAt'])
+            && request.resource.data.pregnancy.datingMethod == resource.data.pregnancy.datingMethod
+            && request.resource.data.pregnancy.referenceDate == resource.data.pregnancy.referenceDate
+            && request.resource.data.pregnancy.gestationalWeeksAtReference == resource.data.pregnancy.gestationalWeeksAtReference
+            && request.resource.data.pregnancy.gestationalDaysAtReference == resource.data.pregnancy.gestationalDaysAtReference
+            && request.resource.data.pregnancy.expectedDueDate == resource.data.pregnancy.expectedDueDate
+            && request.resource.data.pregnancy.archiveAt == resource.data.pregnancy.archiveAt
+            && request.resource.data.pregnancy.outcome in [
+              'liveBirth', 'stillbirth', 'miscarriage', 'ectopicPregnancy', 'other'
+            ]
+            && request.resource.data.pregnancy.endedAt is timestamp
+            && request.resource.data.pregnancy.endedAt <= request.time
+            && request.resource.data.completedAt == (
+              resource.data.status == 'completed'
+                ? resource.data.completedAt
+                : request.time
+            )
             && request.resource.data.updatedAt == request.time
             && request.resource.data.get('archivedAt', null) == resource.data.get('archivedAt', null)
           )

@@ -9,7 +9,15 @@ const {
   assertFails,
   assertSucceeds,
 } = require('@firebase/rules-unit-testing');
-const { doc, getDoc, setDoc } = require('firebase/firestore');
+const {
+  deleteDoc,
+  doc,
+  getDoc,
+  serverTimestamp,
+  setDoc,
+  Timestamp,
+  updateDoc,
+} = require('firebase/firestore');
 
 const projectId = 'demo-medicare-access-tests';
 const rules = fs.readFileSync(path.join(__dirname, '../../firestore.rules'), 'utf8');
@@ -24,6 +32,7 @@ const identities = {
   otherDoctor: { uid: 'doctor-b-uid', email: 'doctor-b@example.com', role: 'doctor', organizationId: 'org-a', doctorId: 'doctor-b' },
   patient: { uid: 'patient-a-uid', email: 'patient-a@example.com', role: 'patient', organizationId: 'org-a', doctorId: 'doctor-a', patientId: 'patient-a' },
   otherPatient: { uid: 'patient-b-uid', email: 'patient-b@example.com', role: 'patient', organizationId: 'org-a', doctorId: 'doctor-b', patientId: 'patient-b' },
+  admin: { uid: 'admin-a-uid', email: 'admin@example.com', role: 'organization', organizationId: 'org-a' },
 };
 
 function userDocument(identity) {
@@ -117,6 +126,7 @@ async function seedFixtures() {
         email: 'patient-a@example.com', organizationId: 'org-a',
         patientId: 'patient-a', doctorId: 'doctor-a',
       },
+      'admins/admin-a-uid': { role: 'admin', active: true },
     };
 
     for (const identity of Object.values(identities)) {
@@ -212,4 +222,121 @@ test('clinic member cannot read another clinic email index or write an index dir
   await assertFails(setDoc(doc(db, 'organizations/org-a/patient_email_index/fake@example.com'), {
     email: 'fake@example.com', organizationId: 'org-a', patientId: 'patient-b',
   }));
+});
+
+test('medical catalog is readable by signed-in users and writable only by admins without deletion', async () => {
+  const doctorDb = context(identities.doctor);
+  const adminDb = context(identities.admin);
+  const entry = doc(adminDb, 'medical_catalog/specialty-test');
+  const data = {
+    id: 'specialty-test',
+    kind: 'specialty',
+    nameAr: 'تخصص اختباري',
+    nameEn: '',
+    specialtyIds: [],
+    active: true,
+    archived: false,
+    updatedAt: serverTimestamp(),
+  };
+
+  await assertSucceeds(getDoc(doc(doctorDb, 'medical_catalog/specialty-test')));
+  await assertFails(setDoc(doc(doctorDb, 'medical_catalog/specialty-test'), data));
+  await assertSucceeds(setDoc(entry, data));
+  await assertFails(deleteDoc(entry));
+  await assertFails(updateDoc(doc(doctorDb, 'medical_catalog/specialty-test'), {
+    active: false,
+  }));
+});
+
+async function seedPregnancyCase() {
+  const casePath = 'organizations/org-a/patients/patient-a/medical_cases/case-a';
+  await testEnvironment.withSecurityRulesDisabled(async (adminContext) => {
+    const db = adminContext.firestore();
+    await setDoc(doc(db, casePath), {
+      id: 'case-a',
+      patientId: 'patient-a',
+      organizationId: 'org-a',
+      doctorId: 'doctor-a',
+      clinicId: 'clinic-a',
+      title: 'Pregnancy',
+      type: 'pregnancy',
+      startedAt: Timestamp.fromDate(new Date('2026-01-01T00:00:00.000Z')),
+      diagnosis: '',
+      assessment: '',
+      notes: '',
+      treatmentPlan: '',
+      status: 'active',
+      createdAt: Timestamp.fromDate(new Date('2026-01-01T00:00:00.000Z')),
+      pregnancy: {
+        datingMethod: 'lastMenstrualPeriod',
+        referenceDate: Timestamp.fromDate(new Date('2026-01-01T00:00:00.000Z')),
+        gestationalWeeksAtReference: 0,
+        gestationalDaysAtReference: 0,
+        expectedDueDate: Timestamp.fromDate(new Date('2026-10-08T00:00:00.000Z')),
+        archiveAt: Timestamp.fromDate(new Date('2026-10-22T00:00:00.000Z')),
+      },
+    });
+    await setDoc(doc(db, `${casePath}/follow_ups/follow-up-a`), {
+      id: 'follow-up-a',
+      caseId: 'case-a',
+      patientId: 'patient-a',
+      organizationId: 'org-a',
+      doctorId: 'doctor-a',
+      clinicId: 'clinic-a',
+    });
+  });
+  return casePath;
+}
+
+test('only the assigned doctor can record a pregnancy outcome once', async () => {
+  const casePath = await seedPregnancyCase();
+  const doctorDb = context(identities.doctor);
+  const otherDoctorDb = context(identities.otherDoctor);
+  const pregnancy = {
+    datingMethod: 'lastMenstrualPeriod',
+    referenceDate: Timestamp.fromDate(new Date('2026-01-01T00:00:00.000Z')),
+    gestationalWeeksAtReference: 0,
+    gestationalDaysAtReference: 0,
+    expectedDueDate: Timestamp.fromDate(new Date('2026-10-08T00:00:00.000Z')),
+    archiveAt: Timestamp.fromDate(new Date('2026-10-22T00:00:00.000Z')),
+    outcome: 'liveBirth',
+    endedAt: Timestamp.fromDate(new Date('2026-10-10T00:00:00.000Z')),
+  };
+
+  await assertFails(updateDoc(doc(doctorDb, casePath), {
+    status: 'completed',
+    completedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(doctorDb, casePath), {
+    status: 'archived',
+    archivedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(otherDoctorDb, casePath), {
+    status: 'completed',
+    completedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    pregnancy,
+  }));
+  await assertSucceeds(updateDoc(doc(doctorDb, casePath), {
+    status: 'completed',
+    completedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    pregnancy,
+  }));
+  await assertFails(updateDoc(doc(doctorDb, casePath), {
+    status: 'completed',
+    completedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    pregnancy: { ...pregnancy, outcome: 'stillbirth' },
+  }));
+});
+
+test('medical cases and clinical follow-ups cannot be deleted', async () => {
+  const casePath = await seedPregnancyCase();
+  const doctorDb = context(identities.doctor);
+
+  await assertFails(deleteDoc(doc(doctorDb, casePath)));
+  await assertFails(deleteDoc(doc(doctorDb, `${casePath}/follow_ups/follow-up-a`)));
 });

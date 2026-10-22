@@ -11,6 +11,7 @@ class MedicalCase {
     required this.clinicId,
     required this.title,
     required this.type,
+    this.conditionId,
     required this.startedAt,
     required this.diagnosis,
     required this.assessment,
@@ -31,6 +32,7 @@ class MedicalCase {
   final String clinicId;
   final String title;
   final String type;
+  final String? conditionId;
   final DateTime startedAt;
   final String diagnosis;
   final String assessment;
@@ -54,6 +56,7 @@ class MedicalCase {
         clinicId: map['clinicId'] as String? ?? '',
         title: map['title'] as String? ?? '',
         type: map['type'] as String? ?? '',
+        conditionId: map['conditionId'] as String?,
         startedAt: _date(map['startedAt']),
         diagnosis: map['diagnosis'] as String? ?? '',
         assessment: map['assessment'] as String? ?? '',

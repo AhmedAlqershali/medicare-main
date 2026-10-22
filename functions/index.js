@@ -9,17 +9,15 @@ const {
   normalizePatientEmail,
   patientEmailIndexPath,
 } = require('./patient_identity');
+const {
+  isPregnancyArchiveDue,
+  pregnancyArchiveDates,
+} = require('./pregnancy_archive');
 
 initializeApp();
 const db = getFirestore();
 const pageSize = 250;
 const workBatchSize = 25;
-const dayMilliseconds = 24 * 60 * 60 * 1000;
-const validDatingMethods = new Set([
-  'lastMenstrualPeriod',
-  'estimatedStartDate',
-  'gestationalAgeAtReference',
-]);
 
 function callableValue(value) {
   if (value != null && typeof value.toDate === 'function') {
@@ -576,56 +574,20 @@ exports.listPatientsForClinic = onCall({ region: 'us-central1' }, async (request
   return { patients: patients.filter((patient) => patient != null) };
 });
 
-function pregnancyArchiveAt(pregnancy) {
-  if (pregnancy == null || typeof pregnancy !== 'object') return null;
-  const { datingMethod, referenceDate } = pregnancy;
-  const weeks = pregnancy.gestationalWeeksAtReference;
-  const days = pregnancy.gestationalDaysAtReference;
-  if (!validDatingMethods.has(datingMethod) ||
-      referenceDate == null || typeof referenceDate.toDate !== 'function' ||
-      !Number.isInteger(weeks) || !Number.isInteger(days) ||
-      weeks < 0 || weeks > 42 || days < 0 || days > 6 ||
-      weeks * 7 + days > 294) {
-    return null;
-  }
-  if (datingMethod === 'gestationalAgeAtReference') {
-    if (weeks * 7 + days === 0) return null;
-  } else if (weeks !== 0 || days !== 0) {
-    return null;
-  }
-
-  const reference = referenceDate.toDate();
-  const referenceDay = Date.UTC(
-    reference.getUTCFullYear(),
-    reference.getUTCMonth(),
-    reference.getUTCDate(),
-  );
-  const baselineDays = weeks * 7 + days;
-  return {
-    archiveAt: referenceDay + (294 - baselineDays) * dayMilliseconds,
-    expectedDueDate: referenceDay + (280 - baselineDays) * dayMilliseconds,
-  };
-}
-
 async function archiveIfDue(reference, now) {
   return db.runTransaction(async (transaction) => {
     const snapshot = await transaction.get(reference);
     if (!snapshot.exists) return false;
 
     const data = snapshot.data();
-    if (data.type !== 'pregnancy' ||
-        !['active', 'monitoring', 'completed'].includes(data.status)) {
-      return false;
-    }
-
-    const dates = pregnancyArchiveAt(data.pregnancy);
-    if (dates == null || dates.archiveAt > now.toMillis()) return false;
+    if (!isPregnancyArchiveDue(data, now.toMillis())) return false;
+    const dates = pregnancyArchiveDates(data.pregnancy);
 
     transaction.update(reference, {
       status: 'archived',
-      completedAt: data.completedAt ?? FieldValue.serverTimestamp(),
+      completedAt: data.completedAt,
       archivedAt: FieldValue.serverTimestamp(),
-      archiveReason: 'pregnancy_period_elapsed',
+      archiveReason: 'pregnancy_ended_and_period_elapsed',
       updatedAt: FieldValue.serverTimestamp(),
       'pregnancy.expectedDueDate': Timestamp.fromMillis(dates.expectedDueDate),
       'pregnancy.archiveAt': Timestamp.fromMillis(dates.archiveAt),

@@ -4,6 +4,7 @@ class _OrganizationProfileScreenState extends State<OrganizationProfileScreen> {
   var _profile = const OrganizationProfile(name: '', email: '', phone: '', location: '', clinicsCount: 0);
   bool _loading = true;
   bool _saving = false;
+  bool _isAdmin = false;
   String? _error;
 
   @override
@@ -32,8 +33,15 @@ class _OrganizationProfileScreenState extends State<OrganizationProfileScreen> {
         return;
       }
       final clinics = await FirestoreClinicRepository.instance.fetchClinicsForOrganization(organizationId);
+      var isAdmin = false;
+      try {
+        isAdmin = await FirestoreMedicalCatalogRepository.instance.isCurrentAdmin();
+      } catch (_) {
+        // Directory access must not block the organization profile.
+      }
       setState(() {
         _loading = false;
+        _isAdmin = isAdmin;
         _profile = OrganizationProfile(name: organization.name, email: organization.email, phone: organization.phone, location: organization.location, clinicsCount: clinics.length);
       });
     } catch (error) {
@@ -80,6 +88,16 @@ class _OrganizationProfileScreenState extends State<OrganizationProfileScreen> {
               _SettingTile(icon: Icons.edit_outlined, title: 'تعديل الملف', onTap: () {
                 if (!_saving) _editProfile();
               }),
+              if (_isAdmin)
+                _SettingTile(
+                  icon: Icons.medical_information_outlined,
+                  title: 'إدارة الدليل الطبي المركزي',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const MedicalCatalogScreen(),
+                    ),
+                  ),
+                ),
               _SettingTile(icon: Icons.notifications_none_rounded, title: 'الإشعارات', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AppNotificationSettingsScreen()))),
               _SettingTile(icon: Icons.brightness_6_outlined, title: 'المظهر', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AppThemeSettingsScreen()))),
               _SettingTile(icon: Icons.support_agent_outlined, title: 'المساعدة', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AppHelpScreen()))),

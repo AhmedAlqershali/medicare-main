@@ -105,6 +105,7 @@ class FirestoreMedicalCaseRepository {
     required String patientId,
     required String title,
     required String type,
+    String? conditionId,
     required DateTime startedAt,
     required String diagnosis,
     required String assessment,
@@ -170,6 +171,8 @@ class FirestoreMedicalCaseRepository {
       'clinicId': doctor.clinicId,
       'title': title.trim(),
       'type': type.trim(),
+      if (conditionId != null && conditionId.isNotEmpty)
+        'conditionId': conditionId,
       'startedAt': Timestamp.fromDate(startedAt),
       'diagnosis': diagnosis.trim(),
       'assessment': assessment.trim(),
@@ -282,8 +285,9 @@ class FirestoreMedicalCaseRepository {
         status != 'archived') {
       throw ArgumentError.value(status, 'status');
     }
-    if (medicalCase.type == 'pregnancy' && status == 'archived') {
-      throw StateError('تتم أرشفة حالة الحمل تلقائيًا بعد انتهاء الفترة المحددة.');
+    if (medicalCase.type == 'pregnancy' &&
+        (status == 'completed' || status == 'archived')) {
+      throw StateError('يجب تسجيل نتيجة الحمل صراحةً قبل إكماله أو أرشفته.');
     }
     final doctor = await _requireCurrentDoctor(medicalCase.organizationId);
     final allowedTransition = switch (status) {
@@ -315,6 +319,64 @@ class FirestoreMedicalCaseRepository {
           medicalCase.id,
         )
         .update(updates);
+  }
+
+  Future<void> recordPregnancyOutcome({
+    required MedicalCase medicalCase,
+    required String outcome,
+    required DateTime endedAt,
+  }) async {
+    const validOutcomes = {
+      'liveBirth',
+      'stillbirth',
+      'miscarriage',
+      'ectopicPregnancy',
+      'other',
+    };
+    final normalizedEndDate = DateTime.utc(endedAt.year, endedAt.month, endedAt.day);
+    final today = DateTime.now();
+    final todayDate = DateTime.utc(today.year, today.month, today.day);
+    if (medicalCase.type != 'pregnancy' ||
+        medicalCase.pregnancyDetails == null ||
+        !validOutcomes.contains(outcome) ||
+        normalizedEndDate.isAfter(todayDate)) {
+      throw StateError('أدخل نتيجة حمل وتاريخ انتهاء صحيحين.');
+    }
+
+    final doctor = await _requireCurrentDoctor(medicalCase.organizationId);
+    if (medicalCase.doctorId != doctor.id ||
+        doctor.clinicId != medicalCase.clinicId) {
+      throw StateError('لا يملك الطبيب الحالي صلاحية تعديل هذه الحالة.');
+    }
+
+    final reference = _service.medicalCaseDocument(
+      medicalCase.organizationId,
+      medicalCase.patientId,
+      medicalCase.id,
+    );
+    await _service.firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(reference);
+      final data = snapshot.data();
+      final pregnancy = data?['pregnancy'];
+      if (data == null ||
+          data['type'] != 'pregnancy' ||
+          data['doctorId'] != doctor.id ||
+          data['clinicId'] != doctor.clinicId ||
+          !{'active', 'monitoring', 'completed'}.contains(data['status']) ||
+          pregnancy is! Map<String, dynamic> ||
+          pregnancy['outcome'] != null ||
+          pregnancy['endedAt'] != null) {
+        throw StateError('نتيجة الحمل مسجلة مسبقًا أو لم تعد الحالة قابلة للتعديل.');
+      }
+      transaction.update(reference, {
+        'status': 'completed',
+        if (data['status'] != 'completed')
+          'completedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'pregnancy.outcome': outcome,
+        'pregnancy.endedAt': Timestamp.fromDate(normalizedEndDate),
+      });
+    });
   }
 
   Future<Doctor> _requireCurrentDoctor(String organizationId) async {

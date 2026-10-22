@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 
 import '../../core/auth/models/account_status.dart';
 import '../../core/auth/models/doctor.dart';
+import '../../core/auth/models/medical_catalog_entry.dart';
 import '../../core/auth/services/firebase_auth_repository.dart';
 import '../../core/localization/doctor_specialty_display.dart';
 import '../../core/firestore/repositories/firestore_doctor_repository.dart';
 import '../../core/firestore/repositories/firestore_clinic_repository.dart';
+import '../../core/firestore/repositories/firestore_medical_catalog_repository.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/medicare_widgets.dart';
+import '../../core/widgets/searchable_catalog_field.dart';
 import 'add_doctor_screen.dart';
 import 'data/repositories/organization_doctors_repository_impl.dart';
 import 'models/organization_doctor.dart';

@@ -2,25 +2,56 @@ part of 'organization_doctors_screen.dart';
 
 class _OrganizationDoctorFormScreenState extends State<OrganizationDoctorFormScreen> {
   late final TextEditingController _nameController = TextEditingController(text: widget.doctor.name.replaceFirst('د. ', ''));
-  late final TextEditingController _specialtyController = TextEditingController(text: widget.doctor.specialty);
   late final TextEditingController _phoneController = TextEditingController(text: widget.doctor.phone);
   late final TextEditingController _emailController = TextEditingController(text: widget.doctor.email);
+  List<MedicalCatalogEntry> _specialties = const [];
+  List<MedicalCatalogEntry> _services = const [];
+  MedicalCatalogEntry? _selectedSpecialty;
+  late Set<String> _selectedServiceIds = widget.doctor.serviceIds.toSet();
+  bool _specialtyChangedByUser = false;
   List<Map<String, dynamic>> _clinics = const [];
   String? _selectedClinicId;
   String? _clinicError;
-
-  List<String> get _specialtyOptions {
-    final current = _specialtyController.text.trim();
-    return current.isNotEmpty && !doctorSpecialties.contains(current)
-        ? [current, ...doctorSpecialties]
-        : doctorSpecialties;
-  }
 
   @override
   void initState() {
     super.initState();
     _selectedClinicId = widget.doctor.clinicId;
     _loadClinics();
+    _loadSpecialties();
+    _loadServices();
+  }
+
+  Future<void> _loadServices() async {
+    try {
+      final entries = await FirestoreMedicalCatalogRepository.instance
+          .fetchEntries(kind: MedicalCatalogKind.service);
+      if (mounted) setState(() => _services = entries);
+    } catch (error) {
+      if (mounted) setState(() => _clinicError = error.toString());
+    }
+  }
+
+  Future<void> _loadSpecialties() async {
+    try {
+      final entries = await FirestoreMedicalCatalogRepository.instance
+          .fetchEntries(kind: MedicalCatalogKind.specialty);
+      if (!mounted) return;
+      setState(() {
+        _specialties = entries;
+        _selectedSpecialty = entries
+            .where((entry) => entry.id == widget.doctor.specialtyId)
+          .firstOrNull ??
+          entries.where((entry) =>
+            entry.nameAr.trim() ==
+              displayDoctorSpecialty(context, widget.doctor.specialty).trim() ||
+            entry.nameAr.trim() == widget.doctor.specialty.trim() ||
+            entry.nameEn.trim().toLowerCase() ==
+              widget.doctor.specialty.trim().toLowerCase()).firstOrNull;
+      });
+    } catch (error) {
+      if (mounted) setState(() => _clinicError = error.toString());
+    }
   }
 
   Future<void> _loadClinics() async {
@@ -41,7 +72,6 @@ class _OrganizationDoctorFormScreenState extends State<OrganizationDoctorFormScr
   @override
   void dispose() {
     _nameController.dispose();
-    _specialtyController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
     super.dispose();
@@ -55,7 +85,18 @@ class _OrganizationDoctorFormScreenState extends State<OrganizationDoctorFormScr
     }
     final updated = widget.doctor.copyWith(
       name: 'د. ${_nameController.text.trim()}',
-      specialty: _specialtyController.text.trim(),
+        specialty: _selectedSpecialty == null ||
+            (widget.doctor.specialtyId == null && !_specialtyChangedByUser)
+          ? widget.doctor.specialty
+          : _selectedSpecialty!.displayName,
+      specialtyId: _selectedSpecialty?.id ?? widget.doctor.specialtyId,
+      serviceIds: _selectedServiceIds.toList(),
+          serviceNames: _services.isEmpty
+            ? widget.doctor.serviceNames
+            : _services
+              .where((service) => _selectedServiceIds.contains(service.id))
+              .map((service) => service.displayName)
+              .toList(),
       clinic: selectedClinic['name'] as String? ?? '',
       clinicId: selectedClinic['id'] as String,
       phone: _phoneController.text.trim(),
@@ -73,7 +114,38 @@ class _OrganizationDoctorFormScreenState extends State<OrganizationDoctorFormScr
             child: Column(children: [
               CustomTextField(label: 'اسم الطبيب', prefixIcon: Icons.badge_outlined, controller: _nameController),
               const SizedBox(height: AppSpacing.md),
-              DropdownButtonFormField<String>(value: _specialtyOptions.contains(_specialtyController.text) ? _specialtyController.text : null, decoration: const InputDecoration(labelText: 'التخصص', prefixIcon: Icon(Icons.medical_information_outlined)), items: _specialtyOptions.map((specialty) => DropdownMenuItem(value: specialty, child: Text(specialty))).toList(), onChanged: (value) => setState(() => _specialtyController.text = value ?? '')),
+              SearchableCatalogField(label: 'التخصص الأساسي', entries: _specialties, selectedId: _selectedSpecialty?.id, legacyValue: widget.doctor.specialtyId == null ? widget.doctor.specialty : null, onChanged: (entry) => setState(() {
+                _selectedSpecialty = entry;
+                _specialtyChangedByUser = true;
+              })),
+              const SizedBox(height: AppSpacing.md),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text('الخدمات التي يقدمها الطبيب', style: Theme.of(context).textTheme.titleSmall),
+              ),
+              if (_services.isEmpty)
+                const ListTile(title: Text('لا توجد خدمات نشطة في الدليل بعد.'))
+              else
+                for (final service in _services)
+                  CheckboxListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    value: _selectedServiceIds.contains(service.id),
+                    title: Text(service.displayName),
+                    subtitle: Text(
+                      service.specialtyIds
+                          .map((id) => _specialties.where((item) => item.id == id).firstOrNull?.displayName)
+                          .whereType<String>()
+                          .join('، '),
+                    ),
+                    onChanged: (selected) => setState(() {
+                      if (selected == true) {
+                        _selectedServiceIds.add(service.id);
+                      } else {
+                        _selectedServiceIds.remove(service.id);
+                      }
+                    }),
+                  ),
               const SizedBox(height: AppSpacing.md),
               InputDecorator(decoration: InputDecoration(labelText: 'العيادة', prefixIcon: const Icon(Icons.local_hospital_outlined), errorText: _clinicError), child: DropdownButtonHideUnderline(child: DropdownButton<String>(isExpanded: true, value: _selectedClinicId, hint: const Text('اختر العيادة'), items: _clinics.map((clinic) => DropdownMenuItem<String>(value: clinic['id'] as String?, child: Text(clinic['name'] as String? ?? ''))).toList(), onChanged: (value) => setState(() => _selectedClinicId = value)))),
               const SizedBox(height: AppSpacing.md),
