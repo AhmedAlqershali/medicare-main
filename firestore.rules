@@ -807,8 +807,7 @@ service cloud.firestore {
           )
         );
 
-      allow delete: if signedIn()
-        && (ownsActiveOrganization(organizationId) || isAdmin());
+      allow delete: if false;
     }
 
     // Allow a patient to find their pending activation record by email.

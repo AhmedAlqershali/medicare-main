@@ -212,6 +212,15 @@ test('patient records cannot be created directly by a client', async () => {
   }));
 });
 
+test('patient records cannot be deleted directly by owners or admins', async () => {
+  const ownerDb = context(identities.owner);
+  const adminDb = context(identities.admin);
+  const patientPath = 'organizations/org-a/patients/patient-a';
+
+  await assertFails(deleteDoc(doc(ownerDb, patientPath)));
+  await assertFails(deleteDoc(doc(adminDb, patientPath)));
+});
+
 test('email indexes are not enumerable and are readable only through their authorized identity', async () => {
   const doctorDb = context(identities.doctor);
   const otherDoctorDb = context(identities.otherDoctor);
