@@ -519,7 +519,6 @@ service cloud.firestore {
             currentUserProfile() != null
             && currentUserProfile().data.role == 'doctor'
             && currentUserProfile().data.organizationId == organizationId
-            && currentUserProfile().data.doctorId == doctorId
             && isDoctorOfOrganization(organizationId, doctorId)
             && request.resource.data.get('firebaseUid', null) == resource.data.get('firebaseUid', null)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -814,10 +813,56 @@ service cloud.firestore {
         && request.resource.data.assessment is string
         && request.resource.data.notes is string
         && request.resource.data.treatmentPlan is string
+        && (
+          (
+            request.resource.data.type == 'pregnancy'
+            && request.resource.data.pregnancy is map
+            && request.resource.data.pregnancy.keys().hasOnly([
+              'datingMethod', 'referenceDate',
+              'gestationalWeeksAtReference', 'gestationalDaysAtReference',
+              'expectedDueDate', 'archiveAt'
+            ])
+            && request.resource.data.pregnancy.datingMethod in [
+              'lastMenstrualPeriod',
+              'estimatedStartDate',
+              'gestationalAgeAtReference'
+            ]
+            && request.resource.data.pregnancy.referenceDate is timestamp
+            && request.resource.data.pregnancy.referenceDate <= request.time
+            && request.resource.data.pregnancy.gestationalWeeksAtReference is int
+            && request.resource.data.pregnancy.gestationalWeeksAtReference >= 0
+            && request.resource.data.pregnancy.gestationalWeeksAtReference <= 42
+            && request.resource.data.pregnancy.gestationalDaysAtReference is int
+            && request.resource.data.pregnancy.gestationalDaysAtReference >= 0
+            && request.resource.data.pregnancy.gestationalDaysAtReference <= 6
+            && request.resource.data.pregnancy.gestationalWeeksAtReference * 7
+              + request.resource.data.pregnancy.gestationalDaysAtReference <= 294
+            && request.resource.data.pregnancy.expectedDueDate is timestamp
+            && request.resource.data.pregnancy.archiveAt is timestamp
+            && (
+              (
+                request.resource.data.pregnancy.datingMethod == 'gestationalAgeAtReference'
+                && request.resource.data.pregnancy.gestationalWeeksAtReference * 7
+                  + request.resource.data.pregnancy.gestationalDaysAtReference > 0
+              )
+              || (
+                request.resource.data.pregnancy.datingMethod in [
+                  'lastMenstrualPeriod', 'estimatedStartDate'
+                ]
+                && request.resource.data.pregnancy.gestationalWeeksAtReference == 0
+                && request.resource.data.pregnancy.gestationalDaysAtReference == 0
+              )
+            )
+          )
+          || (
+            request.resource.data.type != 'pregnancy'
+            && !request.resource.data.keys().hasAny(['pregnancy'])
+          )
+        )
         && request.resource.data.keys().hasOnly([
           'id', 'patientId', 'organizationId', 'doctorId', 'clinicId',
           'title', 'type', 'startedAt', 'diagnosis', 'assessment', 'notes',
-          'treatmentPlan', 'status', 'createdAt'
+          'treatmentPlan', 'status', 'createdAt', 'pregnancy'
         ]);
 
       allow update: if signedIn()

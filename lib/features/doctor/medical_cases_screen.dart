@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/auth/models/clinical_follow_up.dart';
 import '../../core/auth/models/medical_case.dart';
+import '../../core/auth/models/pregnancy_details.dart';
 import '../../core/firestore/appointment_date_time.dart';
 import '../../core/firestore/repositories/firestore_appointment_repository.dart';
 import '../../core/firestore/repositories/firestore_medical_case_repository.dart';
@@ -79,6 +80,7 @@ class _MedicalCasesScreenState extends State<MedicalCasesScreen> {
         assessment: values['assessment']! as String,
         notes: values['notes']! as String,
         treatmentPlan: values['treatmentPlan']! as String,
+        pregnancyDetails: values['pregnancy'] as PregnancyDetails?,
       );
       await _loadCases();
     } catch (error) {
@@ -159,9 +161,7 @@ class _MedicalCasesScreenState extends State<MedicalCasesScreen> {
                                 title: Text(medicalCase.title),
                                 subtitle: Padding(
                                   padding: const EdgeInsets.only(top: 5),
-                                  child: Text(
-                                    '${medicalCase.type} • ${_statusLabel(medicalCase.status)} • ${_formatDate(medicalCase.startedAt)}',
-                                  ),
+                                  child: Text(_caseSummary(medicalCase)),
                                 ),
                                 trailing: const Icon(Icons.chevron_right),
                                 onTap: () => _openCase(medicalCase),
@@ -171,6 +171,19 @@ class _MedicalCasesScreenState extends State<MedicalCasesScreen> {
                         ),
         ),
       );
+
+  String _caseSummary(MedicalCase medicalCase) {
+    final pregnancy = medicalCase.pregnancyDetails;
+    if (pregnancy == null) {
+      return '${medicalCase.type} • ${_statusLabel(medicalCase.status)} • ${_formatDate(medicalCase.startedAt)}';
+    }
+    final asOf = medicalCase.completedAt ??
+      medicalCase.archivedAt ??
+      DateTime.now();
+    final progress = pregnancy.progressAt(asOf);
+    final approximation = pregnancy.monthIsApproximate ? ' (تقريبي)' : '';
+    return '${_statusLabel(medicalCase.status)} • ${progress.weeks} أسبوع و${progress.days} يوم • الشهر التقويمي ${progress.calendarMonth}$approximation';
+  }
 }
 
 class MedicalCaseDetailsScreen extends StatefulWidget {
@@ -313,6 +326,38 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
         ),
       );
 
+  List<Widget> _pregnancyFields(MedicalCase medicalCase) {
+    final pregnancy = medicalCase.pregnancyDetails!;
+    final asOf = medicalCase.completedAt ??
+        medicalCase.archivedAt ??
+        DateTime.now();
+    final progress = pregnancy.progressAt(asOf);
+    return [
+      _field(
+        'عمر الحمل الحالي',
+        '${progress.weeks} أسبوع و${progress.days} يوم',
+      ),
+      _field(
+        'الشهر الحالي',
+        'الشهر التقويمي ${progress.calendarMonth}${pregnancy.monthIsApproximate ? ' (تقديري)' : ''}',
+      ),
+      _field(
+        switch (pregnancy.datingMethod) {
+          PregnancyDatingMethod.lastMenstrualPeriod => 'تاريخ آخر دورة شهرية',
+          PregnancyDatingMethod.estimatedStartDate =>
+            'تاريخ بداية حساب الحمل التقديري',
+          PregnancyDatingMethod.gestationalAgeAtReference =>
+            'تاريخ قياس عمر الحمل',
+        },
+        _formatDate(pregnancy.referenceDate),
+      ),
+      _field(
+        'موعد الولادة المتوقع (تقديري)',
+        _formatDate(pregnancy.expectedDueDate),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: const Text('تفاصيل الحالة')),
@@ -343,7 +388,14 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
                                 style: Theme.of(context).textTheme.bodyMedium,
                               ),
                               const SizedBox(height: AppSpacing.md),
-                              _field('تاريخ البداية', _formatDate(_medicalCase.startedAt)),
+                              if (_medicalCase.pregnancyDetails != null)
+                                ..._pregnancyFields(_medicalCase),
+                              _field(
+                                _medicalCase.pregnancyDetails == null
+                                    ? 'تاريخ بداية الحالة'
+                                    : 'تاريخ تسجيل الحالة',
+                                _formatDate(_medicalCase.startedAt),
+                              ),
                               _field('التشخيص', _medicalCase.diagnosis),
                               _field('التقييم الطبي', _medicalCase.assessment),
                               _field('الملاحظات', _medicalCase.notes),
@@ -352,6 +404,14 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
                                 _field('تاريخ الإكمال', _formatDate(_medicalCase.completedAt!)),
                               if (_medicalCase.archivedAt != null)
                                 _field('تاريخ الأرشفة', _formatDate(_medicalCase.archivedAt!)),
+                              if (_medicalCase.archiveReason != null)
+                                _field(
+                                  'سبب الأرشفة',
+                                  _medicalCase.archiveReason ==
+                                          'pregnancy_period_elapsed'
+                                      ? 'انتهاء الفترة المحددة للحمل'
+                                      : _medicalCase.archiveReason!,
+                                ),
                             ],
                           ),
                         ),
@@ -402,7 +462,9 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
                           children: [
                             Expanded(
                               child: Text(
-                                'سجل المتابعات',
+                                _medicalCase.pregnancyDetails == null
+                                  ? 'سجل المتابعات'
+                                  : 'متابعات الحمل',
                                 style: Theme.of(context).textTheme.titleMedium,
                               ),
                             ),
@@ -462,13 +524,20 @@ class _MedicalCaseFormDialog extends StatefulWidget {
 class _MedicalCaseFormDialogState extends State<_MedicalCaseFormDialog> {
   final _formKey = GlobalKey<FormState>();
   final _controllers = List.generate(6, (_) => TextEditingController());
+  final _weeksController = TextEditingController();
+  final _daysController = TextEditingController();
   DateTime _startedAt = DateTime.now();
+  DateTime? _pregnancyReferenceDate;
+  PregnancyDatingMethod? _datingMethod;
+  bool _isPregnancy = false;
 
   @override
   void dispose() {
     for (final controller in _controllers) {
       controller.dispose();
     }
+    _weeksController.dispose();
+    _daysController.dispose();
     super.dispose();
   }
 
@@ -480,6 +549,18 @@ class _MedicalCaseFormDialogState extends State<_MedicalCaseFormDialog> {
       lastDate: DateTime.now(),
     );
     if (picked != null) setState(() => _startedAt = picked);
+  }
+
+  Future<void> _pickPregnancyReferenceDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _pregnancyReferenceDate ?? DateTime.now(),
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      setState(() => _pregnancyReferenceDate = picked);
+    }
   }
 
   @override
@@ -494,14 +575,115 @@ class _MedicalCaseFormDialogState extends State<_MedicalCaseFormDialog> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _input(0, 'عنوان الحالة', required: true),
-                  _input(1, 'نوع الحالة', required: true),
-                  ListTile(
+                  if (!_isPregnancy) _input(1, 'نوع الحالة', required: true),
+                  if (_isPregnancy)
+                    const ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('نوع الحالة'),
+                      subtitle: Text('حمل'),
+                    ),
+                  SwitchListTile.adaptive(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('تاريخ البداية'),
-                    subtitle: Text(_formatDate(_startedAt)),
-                    trailing: const Icon(Icons.calendar_month_outlined),
-                    onTap: _pickDate,
+                    value: _isPregnancy,
+                    title: const Text('تسجيل حالة حمل'),
+                    onChanged: (value) => setState(() {
+                      _isPregnancy = value;
+                      if (!value && _controllers[1].text == 'pregnancy') {
+                        _controllers[1].clear();
+                      }
+                    }),
                   ),
+                  if (_isPregnancy) ...[
+                    DropdownButtonFormField<PregnancyDatingMethod>(
+                      value: _datingMethod,
+                      decoration: const InputDecoration(
+                        labelText: 'طريقة تأريخ الحمل',
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: PregnancyDatingMethod.lastMenstrualPeriod,
+                          child: Text('تاريخ آخر دورة شهرية'),
+                        ),
+                        DropdownMenuItem(
+                          value: PregnancyDatingMethod.estimatedStartDate,
+                          child: Text(
+                            'تاريخ مرجعي تقديري لبداية حساب الحمل',
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: PregnancyDatingMethod.gestationalAgeAtReference,
+                          child: Text('عمر الحمل بتاريخ قياس'),
+                        ),
+                      ],
+                      validator: (value) => value == null
+                          ? 'اختر طريقة تأريخ الحمل'
+                          : null,
+                      onChanged: (value) =>
+                          setState(() => _datingMethod = value),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(switch (_datingMethod) {
+                        PregnancyDatingMethod.lastMenstrualPeriod =>
+                          'تاريخ آخر دورة شهرية',
+                        PregnancyDatingMethod.estimatedStartDate =>
+                          'تاريخ مرجعي تقديري لبداية حساب الحمل',
+                        PregnancyDatingMethod.gestationalAgeAtReference =>
+                          'تاريخ قياس عمر الحمل',
+                        null => 'التاريخ المرجعي',
+                      }),
+                      subtitle: Text(
+                        _pregnancyReferenceDate == null
+                            ? 'اختر التاريخ المرجعي صراحةً'
+                            : _formatDate(_pregnancyReferenceDate!),
+                      ),
+                      trailing: const Icon(Icons.calendar_month_outlined),
+                      onTap: _pickPregnancyReferenceDate,
+                    ),
+                    if (_datingMethod ==
+                        PregnancyDatingMethod.estimatedStartDate)
+                      const Text(
+                        'يُستخدم هذا التاريخ كبداية حساب عمر الحمل، وليس كتاريخ إخصاب مؤكد.',
+                        textAlign: TextAlign.start,
+                      ),
+                    if (_datingMethod ==
+                        PregnancyDatingMethod.gestationalAgeAtReference)
+                      const Text(
+                        'يجب أن يكون التاريخ هو يوم قياس عمر الحمل المدخل أدناه.',
+                        textAlign: TextAlign.start,
+                      ),
+                    if (_datingMethod ==
+                        PregnancyDatingMethod.gestationalAgeAtReference) ...[
+                      TextFormField(
+                        controller: _weeksController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'أسابيع الحمل بتاريخ القياس',
+                        ),
+                        validator: (value) =>
+                          _validateGestationalAge(value, weeks: true),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      TextFormField(
+                        controller: _daysController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'أيام إضافية (0 إلى 6)',
+                        ),
+                        validator: (value) =>
+                          _validateGestationalAge(value, weeks: false),
+                      ),
+                    ],
+                  ],
+                  if (!_isPregnancy)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('تاريخ بداية الحالة'),
+                      subtitle: Text(_formatDate(_startedAt)),
+                      trailing: const Icon(Icons.calendar_month_outlined),
+                      onTap: _pickDate,
+                    ),
                   _input(2, 'التشخيص'),
                   _input(3, 'التقييم الطبي', maxLines: 3),
                   _input(4, 'الملاحظات', maxLines: 3),
@@ -519,20 +701,76 @@ class _MedicalCaseFormDialogState extends State<_MedicalCaseFormDialog> {
           FilledButton(
             onPressed: () {
               if (!_formKey.currentState!.validate()) return;
+              if (_isPregnancy && _pregnancyReferenceDate == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('اختر تاريخًا مرجعيًا للحمل.'),
+                  ),
+                );
+                return;
+              }
+              final weeks = _isPregnancy &&
+                      _datingMethod ==
+                          PregnancyDatingMethod.gestationalAgeAtReference
+                  ? int.tryParse(_weeksController.text.trim())
+                  : 0;
+              final days = _isPregnancy &&
+                      _datingMethod ==
+                          PregnancyDatingMethod.gestationalAgeAtReference
+                  ? int.tryParse(_daysController.text.trim())
+                  : 0;
+              if (_isPregnancy &&
+                  (weeks == null ||
+                      days == null ||
+                      weeks < 0 ||
+                      weeks > 42 ||
+                      days < 0 ||
+                      days > 6 ||
+                      (weeks == 42 && days > 0) ||
+                      (weeks == 0 && days == 0))) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('أدخل عمر حمل صحيحًا بالأسابيع والأيام.'),
+                  ),
+                );
+                return;
+              }
+              final pregnancy = _isPregnancy
+                  ? PregnancyDetails.fromReference(
+                      datingMethod: _datingMethod!,
+                      referenceDate: _pregnancyReferenceDate!,
+                      gestationalWeeks: weeks ?? 0,
+                      gestationalDays: days ?? 0,
+                    )
+                  : null;
               Navigator.of(context).pop(<String, Object?>{
                 'title': _controllers[0].text,
-                'type': _controllers[1].text,
+                'type': _isPregnancy ? 'pregnancy' : _controllers[1].text,
                 'startedAt': _startedAt,
                 'diagnosis': _controllers[2].text,
                 'assessment': _controllers[3].text,
                 'notes': _controllers[4].text,
                 'treatmentPlan': _controllers[5].text,
+                'pregnancy': pregnancy,
               });
             },
             child: const Text('حفظ الحالة'),
           ),
         ],
       );
+
+  String? _validateGestationalAge(String? value, {required bool weeks}) {
+    if (!_isPregnancy ||
+        _datingMethod != PregnancyDatingMethod.gestationalAgeAtReference) {
+      return null;
+    }
+    final parsed = int.tryParse(value?.trim() ?? '');
+    if (parsed == null) return 'أدخل رقمًا صحيحًا';
+    if (weeks) {
+      return parsed < 0 || parsed > 42 ? 'الأسابيع يجب أن تكون بين 0 و42' : null;
+    }
+    return parsed < 0 || parsed > 6 ? 'الأيام يجب أن تكون بين 0 و6' : null;
+  }
 
   Widget _input(int index, String label, {bool required = false, int maxLines = 1}) =>
       Padding(

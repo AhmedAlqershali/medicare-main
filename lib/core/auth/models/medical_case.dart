@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'pregnancy_details.dart';
+
 class MedicalCase {
   const MedicalCase({
     required this.id,
@@ -18,6 +20,8 @@ class MedicalCase {
     required this.createdAt,
     this.completedAt,
     this.archivedAt,
+    this.archiveReason,
+    this.pregnancyDetails,
   });
 
   final String id;
@@ -36,6 +40,8 @@ class MedicalCase {
   final DateTime createdAt;
   final DateTime? completedAt;
   final DateTime? archivedAt;
+  final String? archiveReason;
+  final PregnancyDetails? pregnancyDetails;
 
   bool get isClosed => status == 'completed' || status == 'archived';
 
@@ -57,6 +63,12 @@ class MedicalCase {
         createdAt: _date(map['createdAt']),
         completedAt: _optionalDate(map['completedAt']),
         archivedAt: _optionalDate(map['archivedAt']),
+        archiveReason: map['archiveReason'] as String?,
+        pregnancyDetails: map['pregnancy'] is Map
+            ? PregnancyDetails.fromMap(
+                Map<String, dynamic>.from(map['pregnancy'] as Map),
+              )
+            : null,
       );
 
   static DateTime _date(Object? value) =>

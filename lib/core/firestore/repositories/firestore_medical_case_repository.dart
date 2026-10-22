@@ -6,6 +6,7 @@ import '../../auth/models/account_status.dart';
 import '../../auth/models/clinical_follow_up.dart';
 import '../../auth/models/doctor.dart';
 import '../../auth/models/medical_case.dart';
+import '../../auth/models/pregnancy_details.dart';
 import '../../auth/services/firebase_auth_repository.dart';
 import '../appointment_date_time.dart';
 import '../firestore_service.dart';
@@ -109,6 +110,7 @@ class FirestoreMedicalCaseRepository {
     required String assessment,
     required String notes,
     required String treatmentPlan,
+    PregnancyDetails? pregnancyDetails,
   }) async {
     final doctor = await _requireCurrentDoctor(organizationId);
     final patient = await FirestorePatientRepository.instance.fetchPatientById(
@@ -126,8 +128,37 @@ class FirestoreMedicalCaseRepository {
     if (title.trim().isEmpty || type.trim().isEmpty) {
       throw StateError('أدخل عنوان الحالة ونوعها.');
     }
+    if ((type.trim() == 'pregnancy') != (pregnancyDetails != null)) {
+      throw StateError('بيانات تأريخ الحمل مطلوبة لحالة الحمل فقط.');
+    }
     if (startedAt.isAfter(DateTime.now())) {
       throw StateError('لا يمكن أن يبدأ السجل الطبي بتاريخ مستقبلي.');
+    }
+
+    PregnancyDetails? normalizedPregnancy;
+    if (pregnancyDetails != null) {
+      final method = pregnancyDetails.datingMethod;
+      final weeks = pregnancyDetails.gestationalWeeksAtReference;
+      final days = pregnancyDetails.gestationalDaysAtReference;
+      final hasValidAge = weeks >= 0 &&
+          weeks <= 42 &&
+          days >= 0 &&
+          days <= 6 &&
+          (weeks < 42 || days == 0);
+      final usesAgeOnly =
+          method == PregnancyDatingMethod.gestationalAgeAtReference;
+      if (!hasValidAge ||
+          (!usesAgeOnly && (weeks != 0 || days != 0)) ||
+          (usesAgeOnly && weeks == 0 && days == 0) ||
+          pregnancyDetails.referenceDate.isAfter(DateTime.now())) {
+        throw StateError('بيانات تأريخ الحمل غير صالحة.');
+      }
+      normalizedPregnancy = PregnancyDetails.fromReference(
+        datingMethod: method,
+        referenceDate: pregnancyDetails.referenceDate,
+        gestationalWeeks: weeks,
+        gestationalDays: days,
+      );
     }
 
     final reference = _service
@@ -148,6 +179,8 @@ class FirestoreMedicalCaseRepository {
       'treatmentPlan': treatmentPlan.trim(),
       'status': 'active',
       'createdAt': FieldValue.serverTimestamp(),
+      if (normalizedPregnancy != null)
+        'pregnancy': normalizedPregnancy.toMap(),
     };
     await reference.set(data);
 
