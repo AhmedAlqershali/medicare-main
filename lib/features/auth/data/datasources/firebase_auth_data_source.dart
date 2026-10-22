@@ -55,11 +55,18 @@ class FirebaseAuthDataSource {
   AccountRole? get currentRole => _session.currentRole;
 
   Future<AuthSession> _buildSession(User firebaseUser) async {
+    if (!firebaseUser.emailVerified) {
+      throw StateError('يجب التحقق من البريد الإلكتروني قبل استخدام الحساب.');
+    }
+
     final profile = await _userProfileRepository.fetchUserProfile(
       firebaseUser.uid,
     );
 
-    if (profile == null || profile.uid != firebaseUser.uid) {
+    if (profile == null ||
+        profile.uid != firebaseUser.uid ||
+        profile.email.trim().toLowerCase() !=
+            (firebaseUser.email ?? '').trim().toLowerCase()) {
       throw StateError(
         'لم يتم العثور على ملف المستخدم المرتبط بحساب Firebase.',
       );
@@ -78,8 +85,16 @@ class FirebaseAuthDataSource {
 
         if (organization == null ||
             organization.status != AccountStatus.active ||
-            (organization.firebaseUid != null &&
-                organization.firebaseUid != firebaseUser.uid)) {
+          (profile.invitationId == null
+            ? organization.firebaseUid != firebaseUser.uid ||
+              organization.email.trim().toLowerCase() !=
+                profile.email.trim().toLowerCase()
+            : !await _isAcceptedOrganizationInvitation(
+              invitationId: profile.invitationId!,
+              organizationId: organizationId,
+              uid: firebaseUser.uid,
+              email: profile.email,
+              ))) {
           throw StateError(
             'تعذر التحقق من ملكية المؤسسة لحساب Firebase الحالي.',
           );
@@ -117,10 +132,17 @@ class FirebaseAuthDataSource {
           organizationId,
           doctorId,
         );
+        final organization = await _organizationRepository
+          .fetchOrganizationById(organizationId);
 
         if (doctor == null ||
+          organization == null ||
+          organization.status != AccountStatus.active ||
             doctor.status != AccountStatus.active ||
-            doctor.firebaseUid != firebaseUser.uid) {
+          doctor.firebaseUid != firebaseUser.uid ||
+          doctor.organizationId != organizationId ||
+          doctor.email.trim().toLowerCase() !=
+            profile.email.trim().toLowerCase()) {
           throw StateError(
             'تعذر التحقق من عضوية الطبيب لحساب Firebase الحالي.',
           );
@@ -155,7 +177,12 @@ class FirebaseAuthDataSource {
 
         if (patient == null ||
             !patient.accountActivated ||
-            patient.firebaseUid != firebaseUser.uid) {
+          patient.status != AccountStatus.active ||
+          patient.firebaseUid != firebaseUser.uid ||
+          patient.organizationId != profile.organizationId ||
+          patient.doctorId != profile.doctorId ||
+          patient.email.trim().toLowerCase() !=
+            profile.email.trim().toLowerCase()) {
           throw StateError(
             'تعذر التحقق من ملكية سجل المريض لحساب Firebase الحالي.',
           );
@@ -180,6 +207,24 @@ class FirebaseAuthDataSource {
     }
   }
 
+  Future<bool> _isAcceptedOrganizationInvitation({
+    required String invitationId,
+    required String organizationId,
+    required String uid,
+    required String email,
+  }) async {
+    final invitation = await _invitationRepository.fetchInvitationById(
+      organizationId,
+      invitationId,
+    );
+    return invitation != null &&
+        invitation.organizationId == organizationId &&
+        invitation.role == AccountRole.organization &&
+        invitation.status == InvitationStatus.accepted &&
+        invitation.userId == uid &&
+        invitation.email.trim().toLowerCase() == email.trim().toLowerCase();
+  }
+
   Future<void> restoreSession() async {
     final firebaseUser = _firebaseAuth.currentUser;
 
@@ -198,11 +243,28 @@ class FirebaseAuthDataSource {
         return;
       }
 
+      await refreshedUser.getIdToken(true);
       _session = await _buildSession(refreshedUser);
     } catch (_) {
       await _firebaseAuth.signOut();
       _session = const AuthSession.signedOut();
     }
+  }
+
+  Future<User?> _refreshVerifiedUser(User user) async {
+    await user.reload();
+    final refreshedUser = _firebaseAuth.currentUser;
+    if (refreshedUser == null) return null;
+
+    if (!refreshedUser.emailVerified) {
+      await refreshedUser.sendEmailVerification();
+      await _firebaseAuth.signOut();
+      _session = const AuthSession.signedOut();
+      return null;
+    }
+
+    await refreshedUser.getIdToken(true);
+    return _firebaseAuth.currentUser;
   }
 
   Future<User?> createFirebaseAccountIfNeeded({
@@ -377,7 +439,7 @@ class FirebaseAuthDataSource {
         password: password,
       );
 
-      final firebaseUser = userCredential.user;
+      var firebaseUser = userCredential.user;
 
       if (firebaseUser == null) {
         return (
@@ -385,6 +447,16 @@ class FirebaseAuthDataSource {
         message: 'تعذر الحصول على حساب Firebase الحالي.',
         user: null,
         currentRole: null,
+        );
+      }
+
+      firebaseUser = await _refreshVerifiedUser(firebaseUser);
+      if (firebaseUser == null) {
+        return (
+          success: false,
+          message: 'تحقق من بريدك الإلكتروني عبر الرابط المرسل قبل تسجيل الدخول.',
+          user: null,
+          currentRole: null,
         );
       }
 
@@ -449,6 +521,15 @@ class FirebaseAuthDataSource {
             );
           }
 
+          if (organizationRecord.status != AccountStatus.active) {
+            return (
+              success: false,
+              message: 'لا يمكن تفعيل حساب مؤسسة غير نشطة.',
+              user: null,
+              currentRole: null,
+            );
+          }
+
           if (organizationRecord.firebaseUid != null &&
               organizationRecord.firebaseUid != firebaseUser.uid) {
             return (
@@ -460,17 +541,21 @@ class FirebaseAuthDataSource {
             );
           }
 
+          final linkBatch = FirebaseFirestore.instance.batch();
           await _organizationRepository.linkFirebaseUid(
             organizationId: organizationRecord.id,
             firebaseUid: firebaseUser.uid,
             email: normalizedEmail,
+            batch: linkBatch,
           );
 
           await _userProfileRepository.linkOrganizationProfile(
             uid: firebaseUser.uid,
             email: normalizedEmail,
             organizationId: organizationRecord.id,
+            batch: linkBatch,
           );
+          await linkBatch.commit();
 
           final user = _authUserForOrganization(
             organizationRecord,
@@ -631,6 +716,15 @@ class FirebaseAuthDataSource {
       );
     }
 
+    if (role != AccountRole.doctor && role != AccountRole.organization) {
+      return (
+        success: false,
+        message: 'نوع الدعوة غير صالح.',
+        user: null,
+        currentRole: null,
+      );
+    }
+
     if (role == AccountRole.organization) {
       return _activateOrganizationInvitation(
         email: normalizedEmail,
@@ -639,7 +733,7 @@ class FirebaseAuthDataSource {
     }
 
     try {
-      final userCredential = await createFirebaseAccountIfNeeded(
+      var userCredential = await createFirebaseAccountIfNeeded(
         email: normalizedEmail,
         password: password,
       );
@@ -650,6 +744,16 @@ class FirebaseAuthDataSource {
         message: 'تعذر إنشاء حساب المستخدم في Firebase.',
         user: null,
         currentRole: null,
+        );
+      }
+
+      userCredential = await _refreshVerifiedUser(userCredential);
+      if (userCredential == null) {
+        return (
+          success: false,
+          message: 'تحقق من بريدك الإلكتروني عبر الرابط المرسل لإكمال تفعيل الدعوة.',
+          user: null,
+          currentRole: null,
         );
       }
 
@@ -669,6 +773,14 @@ class FirebaseAuthDataSource {
       }
 
       if (role == AccountRole.doctor) {
+        final organization = await _organizationRepository.fetchOrganizationById(
+          invitation.organizationId,
+        );
+        if (organization == null ||
+            organization.status != AccountStatus.active) {
+          throw StateError('المؤسسة المرتبطة بالدعوة غير نشطة.');
+        }
+
         final doctorRecord = invitation.doctorId == null
             ? null
             : await _doctorRepository.fetchDoctorByIdForOrganization(
@@ -695,6 +807,13 @@ class FirebaseAuthDataSource {
           );
         }
 
+        if (doctorRecord.email.trim().toLowerCase() != normalizedEmail ||
+          (doctorRecord.status != AccountStatus.pending &&
+            !(doctorRecord.status == AccountStatus.active &&
+              doctorRecord.firebaseUid == userCredential.uid))) {
+          throw StateError('الدعوة لا تطابق سجل طبيب معلّقًا وصالحًا.');
+        }
+
         if (invitation.doctorId != null &&
             invitation.doctorId != doctorRecord.id) {
           return (
@@ -716,11 +835,24 @@ class FirebaseAuthDataSource {
           );
         }
 
+        final existingProfile = await _userProfileRepository.fetchUserProfile(
+          userCredential.uid,
+        );
+        if (existingProfile != null &&
+            (existingProfile.email.trim().toLowerCase() != normalizedEmail ||
+                existingProfile.role != AccountRole.doctor ||
+                existingProfile.doctorId != doctorRecord.id ||
+                existingProfile.organizationId != doctorRecord.organizationId)) {
+          throw StateError('حساب Firebase مرتبط بملف أو مؤسسة أخرى.');
+        }
+
+        final activationBatch = FirebaseFirestore.instance.batch();
         await _doctorRepository.linkFirebaseUidForOrganization(
           organizationId: invitation.organizationId,
           doctorId: doctorRecord.id,
           firebaseUid: userCredential.uid,
           email: normalizedEmail,
+          batch: activationBatch,
         );
 
         await _userProfileRepository.linkDoctorProfile(
@@ -728,7 +860,21 @@ class FirebaseAuthDataSource {
           email: normalizedEmail,
           doctorId: doctorRecord.id,
           organizationId: doctorRecord.organizationId,
+          batch: activationBatch,
         );
+
+        activationBatch.update(
+          _invitationRepository.invitationDocument(
+            invitation.organizationId,
+            invitation.id,
+          ),
+          {
+            'status': InvitationStatus.accepted.name,
+            'userId': userCredential.uid,
+            'acceptedAt': FieldValue.serverTimestamp(),
+          },
+        );
+        await activationBatch.commit();
       } else {
         await _userProfileRepository.createOrUpdateUserProfile(
           uid: userCredential.uid,
@@ -738,16 +884,18 @@ class FirebaseAuthDataSource {
         );
       }
 
-      final updatedInvitation = invitation.copyWith(
-        status: InvitationStatus.accepted,
-        userId: userCredential.uid,
-        acceptedAt: DateTime.now(),
-      );
+      if (role != AccountRole.doctor) {
+        final updatedInvitation = invitation.copyWith(
+          status: InvitationStatus.accepted,
+          userId: userCredential.uid,
+          acceptedAt: DateTime.now(),
+        );
 
-      await _invitationRepository.saveInvitation(
-        organizationId: invitation.organizationId,
-        invitation: updatedInvitation,
-      );
+        await _invitationRepository.saveInvitation(
+          organizationId: invitation.organizationId,
+          invitation: updatedInvitation,
+        );
+      }
 
       final createdUser = UserAccount(
         id: userCredential.uid,
@@ -809,12 +957,15 @@ class FirebaseAuthDataSource {
     required String password,
   }) async {
     User? firebaseUser;
+    var createdAuthAccount = false;
 
     try {
-      firebaseUser = await _createFirebaseAccount(
+      final account = await _createPatientFirebaseAccount(
         email: email,
         password: password,
       );
+      firebaseUser = account.user;
+      createdAuthAccount = account.created;
 
       if (firebaseUser == null) {
         return (
@@ -825,11 +976,21 @@ class FirebaseAuthDataSource {
         );
       }
 
+      firebaseUser = await _refreshVerifiedUser(firebaseUser);
+      if (firebaseUser == null) {
+        return (
+          success: false,
+          message: 'تحقق من بريدك الإلكتروني عبر الرابط المرسل لإكمال تفعيل المؤسسة.',
+          user: null,
+          currentRole: null,
+        );
+      }
+
       final invitation = await _invitationRepository
           .fetchPendingInvitationForAuthenticatedEmail(email);
 
       if (invitation == null) {
-        await firebaseUser.delete();
+        if (createdAuthAccount) await firebaseUser.delete();
 
         return (
         success: false,
@@ -844,7 +1005,7 @@ class FirebaseAuthDataSource {
       );
 
       if (organization == null || organization.status != AccountStatus.active) {
-        await firebaseUser.delete();
+        if (createdAuthAccount) await firebaseUser.delete();
 
         return (
         success: false,
@@ -964,13 +1125,16 @@ class FirebaseAuthDataSource {
         throw StateError('تعذر إنشاء حساب المريض في Firebase.');
       }
 
-      activationStage = 'تحديث بيانات حساب Firebase';
+      activationStage = 'التحقق من البريد الإلكتروني';
 
-      await firebaseUser.reload();
-      firebaseUser = _firebaseAuth.currentUser;
-
+      firebaseUser = await _refreshVerifiedUser(firebaseUser);
       if (firebaseUser == null) {
-        throw StateError('تعذر الوصول إلى حساب Firebase بعد تسجيل الدخول.');
+        return (
+          success: false,
+          message: 'تحقق من بريدك الإلكتروني عبر الرابط المرسل لإكمال تفعيل حساب المريض.',
+          user: null,
+          currentRole: null,
+        );
       }
 
       final firebaseEmail = firebaseUser.email?.trim().toLowerCase();
@@ -1010,13 +1174,10 @@ class FirebaseAuthDataSource {
       if (existingProfile != null &&
           (existingProfile.email.trim().toLowerCase() != normalizedEmail ||
               existingProfile.role != AccountRole.patient ||
-              (existingProfile.patientId != null &&
-                  existingProfile.patientId != patientRecord.id) ||
-              (existingProfile.organizationId != null &&
-                  existingProfile.organizationId !=
-                      patientRecord.organizationId) ||
-              (existingProfile.doctorId != null &&
-                  existingProfile.doctorId != patientRecord.doctorId))) {
+            existingProfile.patientId != patientRecord.id ||
+            existingProfile.organizationId !=
+              patientRecord.organizationId ||
+            existingProfile.doctorId != patientRecord.doctorId)) {
         throw StateError('حساب Firebase مرتبط بسجل مريض أو دور مختلف.');
       }
 
@@ -1102,7 +1263,8 @@ class FirebaseAuthDataSource {
 
       if (activatedPatient == null ||
           activatedPatient.firebaseUid != firebaseUser.uid ||
-          !activatedPatient.accountActivated) {
+          !activatedPatient.accountActivated ||
+          activatedPatient.status != AccountStatus.active) {
         throw StateError('تعذر التحقق من ربط سجل المريض بعد التفعيل.');
       }
 
@@ -1115,6 +1277,7 @@ class FirebaseAuthDataSource {
 
       if (activatedProfile == null ||
           activatedProfile.role != AccountRole.patient ||
+          activatedProfile.email.trim().toLowerCase() != normalizedEmail ||
           activatedProfile.patientId != activatedPatient.id ||
           activatedProfile.organizationId !=
               activatedPatient.organizationId ||

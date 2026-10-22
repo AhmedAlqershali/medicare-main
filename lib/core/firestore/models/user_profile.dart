@@ -11,6 +11,7 @@ class UserProfile {
     this.clinicId,
     this.doctorId,
     this.patientId,
+    this.invitationId,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -22,6 +23,7 @@ class UserProfile {
   final String? clinicId;
   final String? doctorId;
   final String? patientId;
+  final String? invitationId;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -33,6 +35,7 @@ class UserProfile {
         'clinicId': clinicId,
         'doctorId': doctorId,
         'patientId': patientId,
+        'invitationId': invitationId,
         'createdAt': createdAt.toUtc().toIso8601String(),
         'updatedAt': updatedAt.toUtc().toIso8601String(),
       };
@@ -51,6 +54,7 @@ class UserProfile {
         clinicId: map['clinicId'] as String?,
         doctorId: map['doctorId'] as String?,
         patientId: map['patientId'] as String?,
+        invitationId: map['invitationId'] as String?,
         createdAt: _dateFromMap(map['createdAt']) ?? DateTime.now(),
         updatedAt: _dateFromMap(map['updatedAt']) ?? DateTime.now(),
       );

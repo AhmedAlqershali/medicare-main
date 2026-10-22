@@ -53,7 +53,12 @@ birthDate: patient.birthDate ?? '',
 email: patient.email,
 phone: patient.phone ?? '',
 lastAppointment: '',
-status: patient.accountActivated ? 'نشط' : 'قيد التفعيل',
+                        status: switch (patient.status.name) {
+                            'active' => 'نشط',
+                            'pending' => 'قيد التفعيل',
+                            'inactive' => 'غير نشط',
+                            _ => 'غير معروف',
+                        },
 avatarColor: Colors.transparent,
 notes: patient.notes ?? '',
 problemLocation: patient.problemLocation,
@@ -87,11 +92,14 @@ super.dispose();
 
 @override
 Widget build(BuildContext context) {
+final query = _query.trim().toLowerCase();
 final patients = _patients
     .where(
 (patient) =>
-patient.name.contains(_query.trim()) ||
-patient.status.contains(_query.trim()),
+patient.name.toLowerCase().contains(query) ||
+patient.email.toLowerCase().contains(query) ||
+patient.phone.toLowerCase().contains(query) ||
+patient.status.toLowerCase().contains(query),
 )
     .toList();
 

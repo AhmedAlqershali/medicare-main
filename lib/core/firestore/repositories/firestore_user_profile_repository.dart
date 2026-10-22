@@ -149,11 +149,9 @@ required String uid,
 required String email,
 required String doctorId,
 required String organizationId,
+WriteBatch? batch,
 }) async {
-await _service
-    .userDocument(uid)
-    .set(
-{
+final profile = {
 'uid': uid,
 'email': email.trim().toLowerCase(),
 'doctorId': doctorId,
@@ -161,9 +159,13 @@ await _service
 'role': AccountRole.doctor.name,
 'updatedAt':
 FieldValue.serverTimestamp(),
-},
-SetOptions(merge: true),
-);
+};
+final reference = _service.userDocument(uid);
+if (batch == null) {
+    await reference.set(profile, SetOptions(merge: true));
+} else {
+    batch.set(reference, profile, SetOptions(merge: true));
+}
 }
 
 Future<void> linkOrganizationProfile({
@@ -172,6 +174,7 @@ required String email,
 required String organizationId,
 String? clinicId,
 String? invitationId,
+WriteBatch? batch,
 }) async {
 final profile = <String, dynamic>{
 'uid': uid,
@@ -188,11 +191,11 @@ profile['invitationId'] =
 invitationId;
 }
 
-await _service
-    .userDocument(uid)
-    .set(
-profile,
-SetOptions(merge: true),
-);
+final reference = _service.userDocument(uid);
+if (batch == null) {
+    await reference.set(profile, SetOptions(merge: true));
+} else {
+    batch.set(reference, profile, SetOptions(merge: true));
+}
 }
 }

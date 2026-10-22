@@ -91,10 +91,13 @@ class FirestoreOrganizationRepository implements OrganizationRepository {
     return organization;
   }
 
-  Future<void> linkFirebaseUid({required String organizationId, required String firebaseUid, required String email}) async {
+  Future<void> linkFirebaseUid({required String organizationId, required String firebaseUid, required String email, WriteBatch? batch}) async {
     final organization = await fetchOrganizationById(organizationId);
     if (organization == null) {
       throw StateError('لم يتم العثور على المؤسسة المطلوبة.');
+    }
+    if (organization.status != AccountStatus.active) {
+      throw StateError('لا يمكن ربط حساب بمؤسسة غير نشطة.');
     }
     if (organization.email.trim().toLowerCase() != email.trim().toLowerCase()) {
       throw StateError('البريد الإلكتروني للمؤسسة غير مطابق للسجل الموجود.');
@@ -103,21 +106,16 @@ class FirestoreOrganizationRepository implements OrganizationRepository {
       throw StateError('هذه المؤسسة مرتبطة بالفعل بحساب Firebase مختلف ولا يمكن نقله.');
     }
 
-    final updatedOrganization = Organization(
-      id: organization.id,
-      name: organization.name,
-      email: organization.email,
-      phone: organization.phone,
-      location: organization.location,
-      status: organization.status,
-      firebaseUid: firebaseUid,
-      createdAt: organization.createdAt ?? DateTime.now(),
-      updatedAt: DateTime.now(),
-    );
-    await _service.organizationDocument(updatedOrganization.id).set({
-      'firebaseUid': updatedOrganization.firebaseUid,
+    final reference = _service.organizationDocument(organizationId);
+    final data = {
+      'firebaseUid': firebaseUid,
       'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    };
+    if (batch == null) {
+      await reference.update(data);
+    } else {
+      batch.update(reference, data);
+    }
   }
 
   Future<List<Organization>> fetchOrganizations() async {

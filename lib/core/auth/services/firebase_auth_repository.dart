@@ -76,6 +76,20 @@ return exception.message ?? 'حدث خطأ في المصادقة.';
 }
 }
 
+Future<User?> _requireVerifiedUser(User user) async {
+await user.reload();
+final refreshedUser = _firebaseAuth.currentUser;
+if (refreshedUser == null) return null;
+if (!refreshedUser.emailVerified) {
+await refreshedUser.sendEmailVerification();
+await _firebaseAuth.signOut();
+_session = const AuthSession.signedOut();
+return null;
+}
+await refreshedUser.getIdToken(true);
+return _firebaseAuth.currentUser;
+}
+
 Future<User?> _createFirebaseAccountIfNeeded({
 required String email,
 required String password,
@@ -201,12 +215,20 @@ email: normalizedEmail,
 password: password,
 );
 
-final firebaseUser = userCredential.user;
+var firebaseUser = userCredential.user;
 
 if (firebaseUser == null) {
 return const AuthResult(
 success: false,
 message: 'تعذر الحصول على بيانات حساب المستخدم.',
+);
+}
+
+firebaseUser = await _requireVerifiedUser(firebaseUser);
+if (firebaseUser == null) {
+return const AuthResult(
+success: false,
+message: 'تحقق من بريدك الإلكتروني عبر الرابط المرسل قبل تسجيل الدخول.',
 );
 }
 
@@ -223,6 +245,15 @@ message: 'لا يوجد حساب مؤسسة مطابق لهذا البريد.',
 );
 }
 
+if (organizationRecord.status != AccountStatus.active ||
+    organizationRecord.email.trim().toLowerCase() !=
+        (firebaseUser.email ?? '').trim().toLowerCase()) {
+return const AuthResult(
+success: false,
+message: 'تعذر مطابقة بريد الحساب مع مؤسسة نشطة.',
+);
+}
+
 if (organizationRecord.firebaseUid != null &&
 organizationRecord.firebaseUid != firebaseUser.uid) {
 return const AuthResult(
@@ -232,17 +263,21 @@ message:
 );
 }
 
+final linkBatch = FirebaseFirestore.instance.batch();
 await _firestoreOrganizationRepository.linkFirebaseUid(
 organizationId: organizationRecord.id,
 firebaseUid: firebaseUser.uid,
 email: normalizedEmail,
+batch: linkBatch,
 );
 
 await _firestoreUserProfileRepository.linkOrganizationProfile(
 uid: firebaseUser.uid,
 email: normalizedEmail,
 organizationId: organizationRecord.id,
+batch: linkBatch,
 );
+await linkBatch.commit();
 
 _session = AuthSession(
 isAuthenticated: true,
@@ -265,6 +300,7 @@ final profile = await _firestoreUserProfileRepository
     .fetchUserProfile(firebaseUser.uid);
 
 final doctorRecord =
+profile?.role == AccountRole.doctor &&
 profile?.doctorId != null &&
 profile?.organizationId != null
 ? await _firestoreDoctorRepository
@@ -282,29 +318,18 @@ message:
 );
 }
 
-if (doctorRecord.firebaseUid != null &&
-doctorRecord.firebaseUid != firebaseUser.uid) {
+if (profile == null ||
+    profile.email.trim().toLowerCase() !=
+        (firebaseUser.email ?? '').trim().toLowerCase() ||
+    doctorRecord.status != AccountStatus.active ||
+    doctorRecord.firebaseUid != firebaseUser.uid ||
+    doctorRecord.email.trim().toLowerCase() != profile.email.trim().toLowerCase()) {
 return const AuthResult(
 success: false,
 message:
-'هذا الطبيب مرتبط بالفعل بحساب Firebase مختلف ولا يمكن نقله.',
+'ملف الطبيب غير نشط أو غير مرتبط بحساب Firebase الحالي.',
 );
 }
-
-await _firestoreDoctorRepository
-    .linkFirebaseUidForOrganization(
-organizationId: doctorRecord.organizationId,
-doctorId: doctorRecord.id,
-firebaseUid: firebaseUser.uid,
-email: normalizedEmail,
-);
-
-await _firestoreUserProfileRepository.linkDoctorProfile(
-uid: firebaseUser.uid,
-email: normalizedEmail,
-doctorId: doctorRecord.id,
-organizationId: doctorRecord.organizationId,
-);
 
 _session = AuthSession(
 isAuthenticated: true,
@@ -328,6 +353,7 @@ final profile = await _firestoreUserProfileRepository
     .fetchUserProfile(firebaseUser.uid);
 
 final patientRecord =
+profile?.role == AccountRole.patient &&
 profile?.patientId != null &&
 profile?.organizationId != null
 ? await _firestorePatientRepository.fetchPatientById(
@@ -344,7 +370,8 @@ message:
 );
 }
 
-if (!patientRecord.accountActivated) {
+if (!patientRecord.accountActivated ||
+    patientRecord.status != AccountStatus.active) {
 return const AuthResult(
 success: false,
 message:
@@ -352,29 +379,19 @@ message:
 );
 }
 
-if (patientRecord.firebaseUid != null &&
-patientRecord.firebaseUid != firebaseUser.uid) {
+if (profile == null ||
+    profile.email.trim().toLowerCase() !=
+        (firebaseUser.email ?? '').trim().toLowerCase() ||
+    profile.doctorId != patientRecord.doctorId ||
+    patientRecord.email.trim().toLowerCase() != profile.email.trim().toLowerCase() ||
+    patientRecord.organizationId != profile.organizationId ||
+    patientRecord.firebaseUid != firebaseUser.uid) {
 return const AuthResult(
 success: false,
 message:
-'هذا المريض مرتبط بالفعل بحساب Firebase مختلف ولا يمكن نقله.',
+'ملف المريض غير مرتبط بسجل الحساب الحالي.',
 );
 }
-
-await _firestorePatientRepository.activatePatient(
-patientId: patientRecord.id,
-organizationId: patientRecord.organizationId,
-firebaseUid: firebaseUser.uid,
-email: normalizedEmail,
-);
-
-await _firestoreUserProfileRepository.linkPatientProfile(
-uid: firebaseUser.uid,
-email: normalizedEmail,
-patientId: patientRecord.id,
-doctorId: patientRecord.doctorId,
-organizationId: patientRecord.organizationId,
-);
 
 _session = AuthSession(
 isAuthenticated: true,

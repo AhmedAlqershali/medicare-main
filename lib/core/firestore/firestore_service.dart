@@ -27,6 +27,8 @@ class FirestoreService {
 
   CollectionReference<Map<String, dynamic>> patientCollectionForOrganization(String organizationId) => _firestore.collection('organizations').doc(_organizationId(organizationId)).collection('patients');
 
+  DocumentReference<Map<String, dynamic>> patientEmailIndexDocument(String email) => _firestore.collection('patient_email_index').doc(_documentId(email, 'email'));
+
   CollectionReference<Map<String, dynamic>> medicalNotesCollection(String organizationId, String patientId) => patientDocumentForOrganization(organizationId, patientId).collection('medical_notes');
 
   CollectionReference<Map<String, dynamic>> clinicCollection(String organizationId) => _firestore.collection('organizations').doc(_organizationId(organizationId)).collection('clinics');

@@ -7,6 +7,7 @@ import '../../auth/models/account_status.dart';
 import '../../auth/models/organization.dart';
 import '../../auth/services/firebase_auth_repository.dart';
 import '../firestore_service.dart';
+import 'firestore_user_profile_repository.dart';
 
 class FirestoreClinicRepository {
   FirestoreClinicRepository._({FirestoreService? service}) : _service = service ?? FirestoreService();
@@ -29,7 +30,26 @@ class FirestoreClinicRepository {
     final path = 'organizations/$organizationId/clinics';
     debugPrint('[FirestoreDiagnostic] clinics request: uid=${FirebaseAuth.instance.currentUser?.uid}, projectId=${Firebase.apps.isEmpty ? 'unavailable' : Firebase.app().options.projectId}, organizationId=$organizationId, sessionRole=${FirebaseAuthRepository.instance.session.currentRole?.name}, path=$path, operation=collection.get');
     try {
-      final snapshot = await _service.clinicCollection(organizationId).get();
+      Query<Map<String, dynamic>> query =
+          _service.clinicCollection(organizationId);
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null && uid.isNotEmpty) {
+        final profile = await FirestoreUserProfileRepository().fetchUserProfile(uid);
+        if (profile?.role.name == 'organization' &&
+            profile?.clinicId != null &&
+            profile!.clinicId!.isNotEmpty) {
+          final snapshot = await _service
+              .clinicDocument(organizationId, profile.clinicId!)
+              .get();
+          if (!snapshot.exists || snapshot.data() == null) return [];
+          final clinic = snapshot.data()!;
+          if (clinic['organizationId'] != organizationId) {
+            throw StateError('Clinic belongs to a different organization.');
+          }
+          return [{...clinic, 'id': snapshot.id}];
+        }
+      }
+      final snapshot = await query.get();
       return snapshot.docs
           .map((document) => {...document.data(), 'id': document.id})
           .where((clinic) => clinic['organizationId'] == organizationId)

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../auth/models/account_role.dart';
 import '../../auth/models/account_status.dart';
@@ -7,6 +8,7 @@ import '../../auth/models/invitation.dart';
 import '../../auth/models/invitation_status.dart';
 import '../../auth/repositories/doctor_repository.dart';
 import '../firestore_service.dart';
+import 'firestore_user_profile_repository.dart';
 
 class FirestoreDoctorRepository implements DoctorRepository {
 FirestoreDoctorRepository._({
@@ -26,9 +28,19 @@ fetchDoctorsForOrganization(organizationId);
 Future<List<Doctor>> fetchDoctorsForOrganization(
 String organizationId,
 ) async {
-final nestedSnapshot = await _service
-    .doctorCollectionForOrganization(organizationId)
-    .get();
+Query<Map<String, dynamic>> query =
+        _service.doctorCollectionForOrganization(organizationId);
+final uid = FirebaseAuth.instance.currentUser?.uid;
+if (uid != null && uid.isNotEmpty) {
+    final profile = await FirestoreUserProfileRepository().fetchUserProfile(uid);
+    if (profile?.role.name == 'organization' &&
+            profile?.clinicId != null &&
+            profile!.clinicId!.isNotEmpty) {
+        query = query.where('clinicId', isEqualTo: profile.clinicId);
+    }
+}
+
+final nestedSnapshot = await query.get();
 
 return nestedSnapshot.docs
     .map(
@@ -269,6 +281,7 @@ required String organizationId,
 required String doctorId,
 required String firebaseUid,
 required String email,
+WriteBatch? batch,
 }) async {
 final doctor =
 await fetchDoctorByIdForOrganization(
@@ -322,7 +335,23 @@ doctor.createdAt ?? DateTime.now(),
 updatedAt: DateTime.now(),
 );
 
-await saveDoctor(updatedDoctor);
+final doctorReference = _service.doctorDocumentForOrganization(
+    organizationId,
+    doctorId,
+);
+if (batch == null) {
+    await doctorReference.update({
+        'firebaseUid': firebaseUid,
+        'status': AccountStatus.active.name,
+        'updatedAt': FieldValue.serverTimestamp(),
+    });
+} else {
+    batch.update(doctorReference, {
+        'firebaseUid': firebaseUid,
+        'status': AccountStatus.active.name,
+        'updatedAt': FieldValue.serverTimestamp(),
+    });
+}
 
 return updatedDoctor;
 }

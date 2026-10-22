@@ -22,7 +22,7 @@ class _OrganizationClinicDetailsScreenState extends State<OrganizationClinicDeta
       return;
     }
     try {
-      final appointments = await FirestoreAppointmentRepository.instance.fetchAppointmentsForOrganization(organizationId);
+      final appointments = await FirestoreAppointmentRepository.instance.fetchAppointmentsForOrganization(organizationId, clinicId: _clinic.id);
       if (mounted) setState(() {
         _loadingAppointments = false;
         _appointmentsCount = appointments.where((appointment) => appointment['clinicId'] == _clinic.id || appointment['clinicName'] == _clinic.name).length;

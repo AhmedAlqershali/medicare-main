@@ -10,6 +10,7 @@ import '../../auth/models/medical_note.dart';
 import '../../auth/repositories/patient_repository.dart';
 import '../../auth/services/firebase_auth_repository.dart';
 import '../firestore_service.dart';
+import 'firestore_user_profile_repository.dart';
 import 'firestore_doctor_repository.dart';
 
 class FirestorePatientRepository implements PatientRepository {
@@ -90,9 +91,19 @@ debugPrint(
 );
 
 try {
-final snapshot = await _service
-    .patientCollectionForOrganization(organizationId)
-    .get();
+ Query<Map<String, dynamic>> query =
+         _service.patientCollectionForOrganization(organizationId);
+ final uid = FirebaseAuth.instance.currentUser?.uid;
+ if (uid != null && uid.isNotEmpty) {
+     final profile = await FirestoreUserProfileRepository().fetchUserProfile(uid);
+     if (profile?.role.name == 'organization' &&
+             profile?.clinicId != null &&
+             profile!.clinicId!.isNotEmpty) {
+         query = query.where('clinicId', isEqualTo: profile.clinicId);
+     }
+ }
+
+ final snapshot = await query.get();
 
 return snapshot.docs
     .map(
@@ -133,16 +144,26 @@ required TimeOfDay appointmentTime,
 String? problemLocation,
 String? medicalNotes,
 }) async {
+final normalizedName = name.trim();
+final trimmedEmail = email.trim().toLowerCase();
+
+if (normalizedName.isEmpty ||
+    !RegExp(r'^[^@\s/]+@[^@\s/]+\.[^@\s/]+$')
+        .hasMatch(trimmedEmail)) {
+throw StateError('أدخل اسم المريض وبريداً إلكترونياً صحيحاً.');
+}
+
 final doctor = await _doctorRepository.doctorForId(
 doctorId,
 organizationId: organizationId,
 );
 
-final trimmedEmail = email.trim().toLowerCase();
-
-if (doctor == null || doctor.organizationId.isEmpty) {
+if (doctor == null ||
+    doctor.organizationId.isEmpty ||
+    doctor.id != doctorId ||
+    doctor.status != AccountStatus.active) {
 throw StateError(
-'لم يتم العثور على مؤسسة الطبيب قبل إنشاء سجل المريض.',
+'لم يتم العثور على طبيب نشط مرتبط بمؤسسة صالحة.',
 );
 }
 
@@ -150,9 +171,10 @@ final currentUid = FirebaseAuth.instance.currentUser?.uid;
 
 if (currentUid == null ||
 currentUid.isEmpty ||
-doctor.firebaseUid != currentUid) {
+doctor.firebaseUid != currentUid ||
+FirebaseAuth.instance.currentUser?.emailVerified != true) {
 throw StateError(
-'حساب الطبيب الحالي غير مرتبط بسجل الطبيب المطلوب.',
+'يجب تفعيل بريد الطبيب وربط حساب Firebase بسجل الطبيب المطلوب.',
 );
 }
 
@@ -162,6 +184,31 @@ doctor.organizationId != organizationId.trim()) {
 throw StateError(
 'لا يمكن إنشاء المريض خارج مؤسسة الطبيب الحالية.',
 );
+}
+
+final clinicId = doctor.clinicId?.trim();
+if (clinicId == null || clinicId.isEmpty) {
+throw StateError('يجب ربط الطبيب بعيادة قبل إضافة المرضى.');
+}
+
+final clinicSnapshot = await _service
+    .clinicDocument(doctor.organizationId, clinicId)
+    .get();
+if (!clinicSnapshot.exists ||
+    clinicSnapshot.data()?['organizationId'] != doctor.organizationId) {
+throw StateError('عيادة الطبيب غير موجودة ضمن المؤسسة الحالية.');
+}
+
+final doctorPatients = await _service
+    .patientCollectionForOrganization(doctor.organizationId)
+    .where('doctorId', isEqualTo: doctor.id)
+    .get();
+if (doctorPatients.docs.any(
+  (document) =>
+      (document.data()['email'] as String?)?.trim().toLowerCase() ==
+      trimmedEmail,
+)) {
+throw StateError('يوجد سجل للمريض بهذا البريد لدى الطبيب الحالي.');
 }
 
 final now = DateTime.now();
@@ -176,14 +223,14 @@ final appointmentReference = _service
 
 final patient = Patient(
 id: patientReference.id,
-name: name.trim(),
+name: normalizedName,
 email: trimmedEmail,
 doctorId: doctorId,
 organizationId: doctor.organizationId,
-clinicId: doctor.clinicId,
+clinicId: clinicId,
 status: AccountStatus.pending,
 accountActivated: false,
-initials: _initials(name),
+initials: _initials(normalizedName),
 firebaseUid: null,
 createdAt: now,
 updatedAt: now,
@@ -206,7 +253,7 @@ final appointment = <String, dynamic>{
 'patientUid': null,
 'patientName': patient.name,
 'patientInitials': patient.initials,
-'clinicId': doctor.clinicId,
+'clinicId': clinicId,
 'date': _formatDate(appointmentDateTime),
 'time': _formatTime(appointmentTime),
 'type': 'زيارة',
@@ -217,17 +264,24 @@ final appointment = <String, dynamic>{
 'createdBy': invitedBy,
 };
 
-final batch = FirebaseFirestore.instance.batch();
+final emailIndexReference = _service.patientEmailIndexDocument(trimmedEmail);
 
-batch.set(
-patientReference,
-patient.toMap(),
-);
+await _service.firestore.runTransaction((transaction) async {
+    final emailIndex = await transaction.get(emailIndexReference);
+    if (emailIndex.exists) {
+        throw StateError('يوجد سجل للمريض بهذا البريد ضمن المؤسسة الحالية.');
+    }
 
-batch.set(
-appointmentReference,
-appointment,
-);
+    transaction.set(patientReference, patient.toMap());
+    transaction.set(appointmentReference, appointment);
+    transaction.set(emailIndexReference, {
+        'email': trimmedEmail,
+        'organizationId': doctor.organizationId,
+        'doctorId': doctor.id,
+        'clinicId': clinicId,
+        'patientId': patient.id,
+        'createdAt': FieldValue.serverTimestamp(),
+    });
 
 // Store the initial medical note in the permanent notes subcollection.
 final initialNoteText = medicalNotes?.trim() ?? '';
@@ -237,18 +291,15 @@ final noteReference = _service
     .medicalNotesCollection(patient.organizationId, patient.id)
     .doc();
 
-batch.set(
-noteReference,
-{
-'text': initialNoteText,
-'createdAt': FieldValue.serverTimestamp(),
-'doctorUid': currentUid,
-'doctorName': doctor.name,
-},
-);
+        transaction.set(noteReference, {
+            'text': initialNoteText,
+            'createdAt': FieldValue.serverTimestamp(),
+            'doctorUid': currentUid,
+            'doctorName': doctor.name,
+        });
+    }
+});
 }
-
-await batch.commit();
 
 return patient;
 }
@@ -520,11 +571,52 @@ throw StateError(
 );
 }
 
+final emailIndexReference = _service.patientEmailIndexDocument(normalizedEmail);
+final emailIndexSnapshot = await emailIndexReference.get();
+final existingEmailIndex = emailIndexSnapshot.data();
+if (emailIndexSnapshot.exists &&
+        (existingEmailIndex?['email'] != normalizedEmail ||
+                existingEmailIndex?['organizationId'] != patient.organizationId ||
+                existingEmailIndex?['doctorId'] != patient.doctorId ||
+                existingEmailIndex?['patientId'] != patient.id)) {
+    throw StateError('هذا البريد مرتبط بالفعل بسجل مريض آخر.');
+}
+
+final emailIndexData = {
+    'email': normalizedEmail,
+    'organizationId': patient.organizationId,
+    'doctorId': patient.doctorId,
+    'clinicId': patient.clinicId,
+    'patientId': patient.id,
+    'createdAt': existingEmailIndex?['createdAt'] ?? FieldValue.serverTimestamp(),
+};
+
 if (patient.accountActivated) {
 if (patient.firebaseUid != firebaseUid) {
 throw StateError(
 'هذا المريض مرتبط بالفعل بحساب Firebase مختلف ولا يمكن نقله.',
 );
+}
+if (patient.status == AccountStatus.inactive) {
+    throw StateError('حساب المريض غير نشط ولا يمكن تسجيل الدخول.');
+}
+if (patient.status == AccountStatus.pending) {
+    final activationBatch = batch ?? FirebaseFirestore.instance.batch();
+    activationBatch.update(
+        _service.patientDocumentForOrganization(organizationId, patientId),
+        {
+            'status': AccountStatus.active.name,
+            'updatedAt': FieldValue.serverTimestamp(),
+        },
+    );
+        if (!emailIndexSnapshot.exists) {
+            activationBatch.set(emailIndexReference, emailIndexData);
+        }
+    if (batch == null) await activationBatch.commit();
+} else if (!emailIndexSnapshot.exists) {
+        final activationBatch = batch ?? FirebaseFirestore.instance.batch();
+        activationBatch.set(emailIndexReference, emailIndexData);
+        if (batch == null) await activationBatch.commit();
 }
 return;
 }
@@ -542,40 +634,23 @@ throw StateError(
 );
 }
 
-final now = DateTime.now();
-
-final updatedPatient = Patient(
-id: patient.id,
-name: patient.name,
-email: patient.email,
-doctorId: patient.doctorId,
-organizationId: patient.organizationId,
-clinicId: patient.clinicId,
-status: patient.status,
-accountActivated: true,
-initials: patient.initials,
-phone: patient.phone,
-birthDate: patient.birthDate,
-gender: patient.gender,
-firebaseUid: firebaseUid,
-createdAt: patient.createdAt ?? now,
-updatedAt: now,
-problemLocation: patient.problemLocation,
-);
-
 final activationBatch =
 batch ?? FirebaseFirestore.instance.batch();
 
 final patientReference = _service.patientDocumentForOrganization(
-updatedPatient.organizationId,
-updatedPatient.id,
+patient.organizationId,
+patient.id,
 );
 
-activationBatch.set(
-patientReference,
-updatedPatient.toMap(),
-SetOptions(merge: true),
-);
+activationBatch.update(patientReference, {
+    'firebaseUid': firebaseUid,
+    'accountActivated': true,
+    'status': AccountStatus.active.name,
+    'updatedAt': FieldValue.serverTimestamp(),
+});
+if (!emailIndexSnapshot.exists) {
+    activationBatch.set(emailIndexReference, emailIndexData);
+}
 
 // Do not query appointments here: the current Firestore rules deny
 // this query during activation. Appointment linking must be performed

@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../firestore_service.dart';
+import 'firestore_user_profile_repository.dart';
 
 class FirestoreAppointmentRepository {
   FirestoreAppointmentRepository._({FirestoreService? service})
@@ -39,14 +41,26 @@ class FirestoreAppointmentRepository {
 
   Future<List<Map<String, dynamic>>> fetchAppointments(
       String organizationId,
+      {String? clinicId,}
       ) async {
-    final snapshot = await _service
+    Query<Map<String, dynamic>> query = _service
         .appointmentCollection(organizationId)
         .where(
       'organizationId',
       isEqualTo: organizationId,
-    )
-        .get();
+    );
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (clinicId != null && clinicId.isNotEmpty) {
+      query = query.where('clinicId', isEqualTo: clinicId);
+    } else if (uid != null && uid.isNotEmpty) {
+      final profile = await FirestoreUserProfileRepository().fetchUserProfile(uid);
+      if (profile?.role.name == 'organization' &&
+          profile?.clinicId != null &&
+          profile!.clinicId!.isNotEmpty) {
+        query = query.where('clinicId', isEqualTo: profile.clinicId);
+      }
+    }
+    final snapshot = await query.get();
 
     return snapshot.docs
         .map(
@@ -64,9 +78,11 @@ class FirestoreAppointmentRepository {
   }
 
   Future<List<Map<String, dynamic>>> fetchAppointmentsForOrganization(
-      String organizationId,
+      String organizationId, {
+      String? clinicId,
+      }
       ) {
-    return fetchAppointments(organizationId);
+    return fetchAppointments(organizationId, clinicId: clinicId);
   }
 
   Future<List<Map<String, dynamic>>> fetchAppointmentsForPatient({
