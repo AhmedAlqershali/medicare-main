@@ -168,6 +168,8 @@ service cloud.firestore {
         && currentUserProfile().data.role == 'doctor'
         && currentUserProfile().data.organizationId == orgId
         && currentUserProfile().data.doctorId == doctorId
+        && exists(/databases/$(database)/documents/organizations/$(orgId))
+        && get(/databases/$(database)/documents/organizations/$(orgId)).data.status == 'active'
         && exists(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId))
         && get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.firebaseUid == request.auth.uid
         && get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.organizationId == orgId
