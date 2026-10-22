@@ -1,0 +1,194 @@
+[1mdiff --git a/firestore.rules b/firestore.rules[m
+[1mindex 2949c39..f63941e 100644[m
+[1m--- a/firestore.rules[m
+[1m+++ b/firestore.rules[m
+[36m@@ -184,6 +184,17 @@[m [mservice cloud.firestore {[m
+         && patientDocument(orgId, patientId).data.organizationId == orgId;[m
+     }[m
+ [m
+[32m+[m[32m    function isDoctorCaseAccess(orgId, doctorId, patientId, clinicId) {[m
+[32m+[m[32m      return isDoctorPatientAccess(orgId, doctorId, patientId)[m
+[32m+[m[32m        && clinicId is string[m
+[32m+[m[32m        && clinicBelongsToOrganization(orgId, clinicId)[m
+[32m+[m[32m        && ([m
+[32m+[m[32m          patientDocument(orgId, patientId).data.get('clinicId', null) == null[m
+[32m+[m[32m          || patientDocument(orgId, patientId).data.get('clinicId', null) == clinicId[m
+[32m+[m[32m        )[m
+[32m+[m[32m        && get(/databases/$(database)/documents/organizations/$(orgId)/doctors/$(doctorId)).data.get('clinicId', null) == clinicId;[m
+[32m+[m[32m    }[m
+[32m+[m
+     function isCurrentPatientAccess(orgId, patientId) {[m
+       return verifiedEmail()[m
+         && currentUserProfile() != null[m
+[36m@@ -759,7 +770,12 @@[m [mservice cloud.firestore {[m
+         isAdmin()[m
+         || ownsOrganization(organizationId)[m
+         || organizationUserForPatient(organizationId, patientId)[m
+[31m-        || isDoctorPatientAccess(organizationId, resource.data.doctorId, patientId)[m
+[32m+[m[32m        || isDoctorCaseAccess([m
+[32m+[m[32m          organizationId,[m
+[32m+[m[32m          resource.data.doctorId,[m
+[32m+[m[32m          patientId,[m
+[32m+[m[32m          resource.data.clinicId[m
+[32m+[m[32m        )[m
+         || isCurrentPatientAccess(organizationId, patientId)[m
+       );[m
+ [m
+[36m@@ -768,10 +784,11 @@[m [mservice cloud.firestore {[m
+         && currentUserProfile().data.role == 'doctor'[m
+         && currentUserProfile().data.organizationId == organizationId[m
+         && currentUserProfile().data.get('doctorId', null) is string[m
+[31m-        && isDoctorPatientAccess([m
+[32m+[m[32m        && isDoctorCaseAccess([m
+           organizationId,[m
+           currentUserProfile().data.doctorId,[m
+[31m-          patientId[m
+[32m+[m[32m          patientId,[m
+[32m+[m[32m          request.resource.data.clinicId[m
+         )[m
+         && request.resource.data.id == caseId[m
+         && request.resource.data.patientId == patientId[m
+[36m@@ -785,8 +802,6 @@[m [mservice cloud.firestore {[m
+             && request.resource.data.clinicId == get(/databases/$(database)/documents/organizations/$(organizationId)/doctors/$(currentUserProfile().data.doctorId)).data.get('clinicId', null)[m
+           )[m
+         )[m
+[31m-        && clinicBelongsToOrganization(organizationId, request.resource.data.clinicId)[m
+[31m-        && get(/databases/$(database)/documents/organizations/$(organizationId)/doctors/$(currentUserProfile().data.doctorId)).data.get('clinicId', null) == request.resource.data.clinicId[m
+         && request.resource.data.title is string[m
+         && request.resource.data.title.size() > 0[m
+         && request.resource.data.type is string[m
+[36m@@ -810,8 +825,12 @@[m [mservice cloud.firestore {[m
+         && currentUserProfile().data.role == 'doctor'[m
+         && currentUserProfile().data.organizationId == organizationId[m
+         && currentUserProfile().data.doctorId == resource.data.doctorId[m
+[31m-        && isDoctorPatientAccess(organizationId, resource.data.doctorId, patientId)[m
+[31m-        && get(/databases/$(database)/documents/organizations/$(organizationId)/doctors/$(resource.data.doctorId)).data.get('clinicId', null) == resource.data.clinicId[m
+[32m+[m[32m        && isDoctorCaseAccess([m
+[32m+[m[32m          organizationId,[m
+[32m+[m[32m          resource.data.doctorId,[m
+[32m+[m[32m          patientId,[m
+[32m+[m[32m          resource.data.clinicId[m
+[32m+[m[32m        )[m
+         && request.resource.data.id == resource.data.id[m
+         && request.resource.data.patientId == resource.data.patientId[m
+         && request.resource.data.organizationId == resource.data.organizationId[m
+[36m@@ -862,10 +881,11 @@[m [mservice cloud.firestore {[m
+           isAdmin()[m
+           || ownsOrganization(organizationId)[m
+           || organizationUserForPatient(organizationId, patientId)[m
+[31m-          || isDoctorPatientAccess([m
+[32m+[m[32m          || isDoctorCaseAccess([m
+             organizationId,[m
+             get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/medical_cases/$(caseId)).data.doctorId,[m
+[31m-            patientId[m
+[32m+[m[32m            patientId,[m
+[32m+[m[32m            get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/medical_cases/$(caseId)).data.clinicId[m
+           )[m
+           || isCurrentPatientAccess(organizationId, patientId)[m
+         );[m
+[36m@@ -875,14 +895,17 @@[m [mservice cloud.firestore {[m
+         && currentUserProfile().data.role == 'doctor'[m
+         && currentUserProfile().data.organizationId == organizationId[m
+         && currentUserProfile().data.doctorId == request.resource.data.doctorId[m
+[31m-        && isDoctorPatientAccess(organizationId, request.resource.data.doctorId, patientId)[m
+         && exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/medical_cases/$(caseId))[m
+         && get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/medical_cases/$(caseId)).data.status in ['active', 'monitoring'][m
+         && get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/medical_cases/$(caseId)).data.doctorId == request.resource.data.doctorId[m
+         && get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/medical_cases/$(caseId)).data.clinicId == request.resource.data.clinicId[m
+         && request.resource.data.clinicId is string[m
+[31m-        && clinicBelongsToOrganization(organizationId, request.resource.data.clinicId)[m
+[31m-        && get(/databases/$(database)/documents/organizations/$(organizationId)/doctors/$(request.resource.data.doctorId)).data.get('clinicId', null) == request.resource.data.clinicId[m
+[32m+[m[32m        && isDoctorCaseAccess([m
+[32m+[m[32m          organizationId,[m
+[32m+[m[32m          request.resource.data.doctorId,[m
+[32m+[m[32m          patientId,[m
+[32m+[m[32m          request.resource.data.clinicId[m
+[32m+[m[32m        )[m
+         && request.resource.data.id == followUpId[m
+         && request.resource.data.caseId == caseId[m
+         && request.resource.data.patientId == patientId[m
+[1mdiff --git a/lib/core/firestore/repositories/firestore_medical_case_repository.dart b/lib/core/firestore/repositories/firestore_medical_case_repository.dart[m
+[1mindex a5ae4e7..794b741 100644[m
+[1m--- a/lib/core/firestore/repositories/firestore_medical_case_repository.dart[m
+[1m+++ b/lib/core/firestore/repositories/firestore_medical_case_repository.dart[m
+[36m@@ -29,9 +29,20 @@[m [mclass FirestoreMedicalCaseRepository {[m
+     Query<Map<String, dynamic>> query =[m
+         _service.medicalCaseCollection(organizationId, patientId);[m
+     final session = FirebaseAuthRepository.instance.session;[m
+[31m-    if (session.currentRole == AccountRole.doctor &&[m
+[31m-        session.doctorId != null) {[m
+[31m-      query = query.where('doctorId', isEqualTo: session.doctorId);[m
+[32m+[m[32m    if (session.currentRole == AccountRole.doctor) {[m
+[32m+[m[32m      final doctorId = session.doctorId;[m
+[32m+[m[32m      if (doctorId == null || doctorId.isEmpty) {[m
+[32m+[m[32m        throw StateError('لا توجد هوية طبيب مرتبطة بالجلسة الحالية.');[m
+[32m+[m[32m      }[m
+[32m+[m[32m      final doctor = await FirestoreDoctorRepository.instance[m
+[32m+[m[32m          .fetchDoctorByIdForOrganization(organizationId, doctorId);[m
+[32m+[m[32m      final clinicId = doctor?.clinicId;[m
+[32m+[m[32m      if (doctor == null || clinicId == null || clinicId.isEmpty) {[m
+[32m+[m[32m        throw StateError('لا توجد عيادة نشطة مرتبطة بالطبيب الحالي.');[m
+[32m+[m[32m      }[m
+[32m+[m[32m      query = query[m
+[32m+[m[32m          .where('doctorId', isEqualTo: doctorId)[m
+[32m+[m[32m          .where('clinicId', isEqualTo: clinicId);[m
+     }[m
+     final snapshot = await query.get();[m
+ [m
+[36m@@ -190,6 +201,9 @@[m [mclass FirestoreMedicalCaseRepository {[m
+           appointment['status'] != 'completed' ||[m
+           appointmentAt == null ||[m
+           appointmentAt.isAfter(DateTime.now()) ||[m
+[32m+[m[32m          appointmentAt.year != visitAt.year ||[m
+[32m+[m[32m          appointmentAt.month != visitAt.month ||[m
+[32m+[m[32m          appointmentAt.day != visitAt.day ||[m
+           appointment['organizationId'] != medicalCase.organizationId ||[m
+           appointment['patientId'] != medicalCase.patientId ||[m
+           appointment['doctorId'] != medicalCase.doctorId ||[m
+[1mdiff --git a/lib/features/doctor/medical_cases_screen.dart b/lib/features/doctor/medical_cases_screen.dart[m
+[1mindex 35e2c88..44847fc 100644[m
+[1m--- a/lib/features/doctor/medical_cases_screen.dart[m
+[1m+++ b/lib/features/doctor/medical_cases_screen.dart[m
+[36m@@ -599,7 +599,7 @@[m [mclass _FollowUpFormDialogState extends State<_FollowUpFormDialog> {[m
+                     title: const Text('تاريخ الزيارة'),[m
+                     subtitle: Text(_formatDate(_visitAt)),[m
+                     trailing: const Icon(Icons.calendar_month_outlined),[m
+[31m-                    onTap: _pickDate,[m
+[32m+[m[32m                    onTap: _appointmentId.isEmpty ? _pickDate : null,[m
+                   ),[m
+                   if (widget.completedAppointments.isNotEmpty)[m
+                     DropdownButtonFormField<String>([m
+[36m@@ -626,8 +626,31 @@[m [mclass _FollowUpFormDialogState extends State<_FollowUpFormDialog> {[m
+                           );[m
+                         }),[m
+                       ],[m
+[31m-                      onChanged: (value) =>[m
+[31m-                          setState(() => _appointmentId = value ?? ''),[m
+[32m+[m[32m                      onChanged: (value) {[m
+[32m+[m[32m                        setState(() {[m
+[32m+[m[32m                          _appointmentId = value ?? '';[m
+[32m+[m[32m                          if (_appointmentId.isEmpty) return;[m
+[32m+[m[32m                          for (final appointment[m
+[32m+[m[32m                              in widget.completedAppointments) {[m
+[32m+[m[32m                            if (appointment['id'].toString() !=[m
+[32m+[m[32m                                _appointmentId) {[m
+[32m+[m[32m                              continue;[m
+[32m+[m[32m                            }[m
+[32m+[m[32m                            final appointmentAt = parseAppointmentDateTime([m
+[32m+[m[32m                              appointment['date'],[m
+[32m+[m[32m                              appointment['time'],[m
+[32m+[m[32m                            );[m
+[32m+[m[32m                            if (appointmentAt != null) {[m
+[32m+[m[32m                              _visitAt = DateTime([m
+[32m+[m[32m                                appointmentAt.year,[m
+[32m+[m[32m                                appointmentAt.month,[m
+[32m+[m[32m                                appointmentAt.day,[m
+[32m+[m[32m                              );[m
+[32m+[m[32m                            }[m
+[32m+[m[32m                            break;[m
+[32m+[m[32m                          }[m
+[32m+[m[32m                        });[m
+[32m+[m[32m                      },[m
+                     ),[m
+                   const SizedBox(height: AppSpacing.sm),[m
+                   _input(0, 'التقييم', required: true, maxLines: 3),[m
