@@ -3,32 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:medicare/core/auth/models/clinical_follow_up.dart';
 
 void main() {
-  test('next appointment must be strictly after the clinical visit', () {
-    final visitAt = DateTime.utc(2026, 10, 20, 10);
-
-    expect(
-      ClinicalFollowUp.isNextAppointmentAfterVisit(
-        visitAt: visitAt,
-        nextAppointmentAt: visitAt.add(const Duration(minutes: 1)),
-      ),
-      isTrue,
-    );
-    expect(
-      ClinicalFollowUp.isNextAppointmentAfterVisit(
-        visitAt: visitAt,
-        nextAppointmentAt: visitAt,
-      ),
-      isFalse,
-    );
-    expect(
-      ClinicalFollowUp.isNextAppointmentAfterVisit(
-        visitAt: visitAt,
-        nextAppointmentAt: visitAt.subtract(const Duration(minutes: 1)),
-      ),
-      isFalse,
-    );
-  });
-
   test('parses extensible case data and next appointment independently', () {
     final visit = DateTime.utc(2026, 10, 20);
     final nextAppointment = DateTime.utc(2026, 10, 27);

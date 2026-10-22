@@ -187,11 +187,23 @@ test('clinic-scoped member can read its direct and explicitly assigned legacy pa
   await assertFails(getDoc(doc(db, 'organizations/org-b/patients/patient-other-org')));
 });
 
-test('doctor can read owned and explicitly assigned patients in the active clinic only', async () => {
+test('doctor can read a directly assigned patient', async () => {
   const db = context(identities.doctor);
   await assertSucceeds(getDoc(doc(db, 'organizations/org-a/patients/patient-a')));
+});
+
+test('doctor can read a legacy patient assigned to its clinic', async () => {
+  const db = context(identities.doctor);
   await assertSucceeds(getDoc(doc(db, 'organizations/org-a/patients/patient-legacy')));
+});
+
+test('doctor can read a patient explicitly assigned to its clinic', async () => {
+  const db = context(identities.doctor);
   await assertSucceeds(getDoc(doc(db, 'organizations/org-a/patients/patient-shared')));
+});
+
+test('doctor cannot read another clinic or organization patient', async () => {
+  const db = context(identities.doctor);
   await assertFails(getDoc(doc(db, 'organizations/org-a/patients/patient-b')));
   await assertFails(getDoc(doc(db, 'organizations/org-b/patients/patient-other-org')));
 });
@@ -212,7 +224,7 @@ test('patient records cannot be created directly by a client', async () => {
   }));
 });
 
-test('patient records cannot be deleted directly by owners or admins', async () => {
+test('patient records cannot be deleted by organization owners or admins', async () => {
   const ownerDb = context(identities.owner);
   const adminDb = context(identities.admin);
   const patientPath = 'organizations/org-a/patients/patient-a';
@@ -404,6 +416,11 @@ test('follow-ups are append-only and restricted to the assigned doctor and patie
   await assertFails(setDoc(doc(otherDoctorDb, followUpPath), data));
   await assertFails(setDoc(doc(patientDb, followUpPath), data));
   await assertSucceeds(setDoc(doc(doctorDb, followUpPath), data));
+  await assertSucceeds(setDoc(doc(doctorDb, `${casePath}/follow_ups/follow-up-same-time`), {
+    ...data,
+    id: 'follow-up-same-time',
+    nextAppointmentAt: data.visitAt,
+  }));
   await assertSucceeds(setDoc(doc(doctorDb, `${casePath}/follow_ups/follow-up-linked`), {
     ...data,
     id: 'follow-up-linked',
@@ -444,6 +461,17 @@ test('service-linked appointments cannot be completed directly by clients', asyn
 test('service-linked appointments require an active service assigned to their doctor', async () => {
   const doctorDb = context(identities.doctor);
   const appointmentPath = 'organizations/org-a/appointments/new-service-appointment';
+  await testEnvironment.withSecurityRulesDisabled(async (adminContext) => {
+    await setDoc(doc(adminContext.firestore(), 'medical_catalog/service-unassigned'), {
+      id: 'service-unassigned',
+      kind: 'service',
+      nameAr: 'خدمة غير معينة',
+      nameEn: '',
+      specialtyIds: [],
+      active: true,
+      archived: false,
+    });
+  });
   const validAppointment = {
     id: 'new-service-appointment',
     organizationId: 'org-a',
@@ -466,6 +494,12 @@ test('service-linked appointments require an active service assigned to their do
     ...validAppointment,
     id: 'unassigned-service',
     serviceId: 'unknown-service',
+  }));
+  await assertFails(setDoc(doc(doctorDb, 'organizations/org-a/appointments/not-offered-service'), {
+    ...validAppointment,
+    id: 'not-offered-service',
+    serviceId: 'service-unassigned',
+    serviceName: 'خدمة غير معينة',
   }));
 });
 

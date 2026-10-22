@@ -30,8 +30,20 @@ function isRepeatBlocked(nextEligibleAt, nowMillis) {
     nextEligibleAt.getTime() > nowMillis;
 }
 
+function normalizeRepeatIntervalMonths(value) {
+  if (value == null) return 0;
+  return Number.isInteger(value) && value >= 0 && value <= 1200
+    ? value
+    : null;
+}
+
 function serviceEligibilityDate(serviceAt, repeatIntervalMonths) {
   return addCalendarMonths(serviceAt, repeatIntervalMonths);
 }
 
-module.exports = { addCalendarMonths, isRepeatBlocked, serviceEligibilityDate };
+module.exports = {
+  addCalendarMonths,
+  isRepeatBlocked,
+  normalizeRepeatIntervalMonths,
+  serviceEligibilityDate,
+};

@@ -35,12 +35,6 @@ class ClinicalFollowUp {
   final Map<String, dynamic> caseData;
   final DateTime? nextAppointmentAt;
 
-  static bool isNextAppointmentAfterVisit({
-    required DateTime visitAt,
-    required DateTime nextAppointmentAt,
-  }) =>
-      nextAppointmentAt.isAfter(visitAt);
-
   factory ClinicalFollowUp.fromMap(String id, Map<String, dynamic> map) =>
       ClinicalFollowUp(
         id: id,

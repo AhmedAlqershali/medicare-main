@@ -14,6 +14,7 @@ const {
   pregnancyArchiveDates,
 } = require('./pregnancy_archive');
 const {
+  normalizeRepeatIntervalMonths,
   serviceEligibilityDate,
   isRepeatBlocked,
 } = require('./service_restrictions');
@@ -199,10 +200,9 @@ exports.completeAppointmentWithService = onCall({ region: 'us-central1' }, async
     }
 
     const serviceAt = Date.now();
-    const intervalValue = service.repeatIntervalMonths;
-    const repeatIntervalMonths = intervalValue == null ? 0 : intervalValue;
-    if (!Number.isInteger(repeatIntervalMonths) ||
-        repeatIntervalMonths < 0 || repeatIntervalMonths > 1200) {
+    const repeatIntervalMonths =
+      normalizeRepeatIntervalMonths(service.repeatIntervalMonths);
+    if (repeatIntervalMonths == null) {
       throw new HttpsError('failed-precondition', 'مدة تكرار الخدمة غير صالحة.');
     }
     let lastServiceAt = usageSnapshot.data()?.lastServiceAt?.toDate?.() ?? null;
@@ -364,9 +364,10 @@ exports.getMedicalServiceUsage = onCall({ region: 'us-central1' }, async (reques
     }
   }
 
-  const interval = Number.isInteger(service.repeatIntervalMonths)
-    ? service.repeatIntervalMonths
-    : 0;
+  const interval = normalizeRepeatIntervalMonths(service.repeatIntervalMonths);
+  if (interval == null) {
+    throw new HttpsError('failed-precondition', 'مدة تكرار الخدمة غير صالحة.');
+  }
   const nextEligibleAt = lastServiceAt == null
     ? null
     : serviceEligibilityDate(lastServiceAt, interval);
@@ -805,9 +806,18 @@ exports.listPatientsForClinic = onCall({ region: 'us-central1' }, async (request
   }
   const context = await activeOrganizationClinicContext(request, clinicId);
   const patientCollection = context.organizationRef.collection('patients');
-  const [primaryPatients, assignedPatients, clinicDoctors] = await Promise.all([
+  const [
+    primaryPatients,
+    assignedPatients,
+    assignedClinicPatients,
+    clinicDoctors,
+  ] = await Promise.all([
     patientCollection.where('clinicId', '==', clinicId).get(),
     db.collectionGroup('clinic_access')
+      .where('organizationId', '==', context.organizationId)
+      .where('clinicId', '==', clinicId)
+      .get(),
+    db.collectionGroup('clinic_access_by_clinic')
       .where('organizationId', '==', context.organizationId)
       .where('clinicId', '==', clinicId)
       .get(),
@@ -817,12 +827,17 @@ exports.listPatientsForClinic = onCall({ region: 'us-central1' }, async (request
   for (const document of primaryPatients.docs) {
     references.set(document.id, document.ref);
   }
-  for (const access of assignedPatients.docs) {
+  for (const access of [
+    ...assignedPatients.docs,
+    ...assignedClinicPatients.docs,
+  ]) {
     const segments = access.ref.path.split('/');
     const data = access.data();
     if (segments.length === 6 && segments[0] === 'organizations' &&
         segments[1] === context.organizationId && segments[2] === 'patients' &&
-        segments[4] === 'clinic_access' && data.patientId === segments[3] &&
+        ['clinic_access', 'clinic_access_by_clinic'].includes(segments[4]) &&
+        data.organizationId === context.organizationId &&
+        data.patientId === segments[3] &&
         data.clinicId === clinicId) {
       references.set(segments[3], patientCollection.doc(segments[3]));
     }

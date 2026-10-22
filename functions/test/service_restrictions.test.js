@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const {
   addCalendarMonths,
   isRepeatBlocked,
+  normalizeRepeatIntervalMonths,
   serviceEligibilityDate,
 } = require('../service_restrictions');
 
@@ -29,6 +30,17 @@ test('supports no restriction and different intervals', () => {
     serviceEligibilityDate(serviceAt, 3).toISOString(),
     '2026-08-05T00:00:00.000Z',
   );
+});
+
+test('defaults missing legacy intervals but rejects invalid configured intervals', () => {
+  assert.equal(normalizeRepeatIntervalMonths(undefined), 0);
+  assert.equal(normalizeRepeatIntervalMonths(null), 0);
+  assert.equal(normalizeRepeatIntervalMonths(0), 0);
+  assert.equal(normalizeRepeatIntervalMonths(1200), 1200);
+  assert.equal(normalizeRepeatIntervalMonths(-1), null);
+  assert.equal(normalizeRepeatIntervalMonths(1201), null);
+  assert.equal(normalizeRepeatIntervalMonths(1.5), null);
+  assert.equal(normalizeRepeatIntervalMonths('12'), null);
 });
 
 test('blocks strictly before the due instant but allows at due time', () => {

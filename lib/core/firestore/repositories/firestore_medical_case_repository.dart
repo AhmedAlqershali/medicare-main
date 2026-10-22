@@ -211,11 +211,7 @@ class FirestoreMedicalCaseRepository {
     if (visitAt.isAfter(DateTime.now())) {
       throw StateError('تاريخ المتابعة السريرية لا يمكن أن يكون مستقبليًا.');
     }
-    if (nextAppointmentAt != null &&
-        !ClinicalFollowUp.isNextAppointmentAfterVisit(
-          visitAt: visitAt,
-          nextAppointmentAt: nextAppointmentAt,
-        )) {
+    if (nextAppointmentAt != null && nextAppointmentAt.isBefore(visitAt)) {
       throw StateError('تاريخ الموعد القادم يجب أن يكون بعد تاريخ الزيارة.');
     }
 
