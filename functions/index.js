@@ -13,6 +13,10 @@ const {
   isPregnancyArchiveDue,
   pregnancyArchiveDates,
 } = require('./pregnancy_archive');
+const {
+  serviceEligibilityDate,
+  isRepeatBlocked,
+} = require('./service_restrictions');
 
 initializeApp();
 const db = getFirestore();
@@ -94,6 +98,283 @@ async function activeDoctorContext(request) {
     organizationRef,
   };
 }
+
+exports.completeAppointmentWithService = onCall({ region: 'us-central1' }, async (request) => {
+  const context = await activeDoctorContext(request);
+  const appointmentId = typeof request.data?.appointmentId === 'string'
+    ? request.data.appointmentId.trim()
+    : '';
+  const overrideReason = typeof request.data?.overrideReason === 'string'
+    ? request.data.overrideReason.trim()
+    : '';
+  if (appointmentId === '' || overrideReason.length > 1000) {
+    throw new HttpsError('invalid-argument', 'معرّف الموعد أو سبب الاستثناء غير صالح.');
+  }
+
+  const organizationRef = context.organizationRef;
+  const appointmentRef = organizationRef.collection('appointments').doc(appointmentId);
+  const result = await db.runTransaction(async (transaction) => {
+    const appointmentSnapshot = await transaction.get(appointmentRef);
+    const appointment = appointmentSnapshot.data();
+    if (!appointmentSnapshot.exists || appointment == null ||
+        appointment.organizationId !== context.organizationId ||
+        appointment.doctorId !== context.doctorId ||
+      appointment.clinicId !== context.clinicId ||
+        typeof appointment.patientId !== 'string' ||
+        typeof appointment.clinicId !== 'string') {
+      throw new HttpsError('permission-denied', 'الموعد لا يتبع الطبيب أو المؤسسة الحالية.');
+    }
+
+    if (appointment.status === 'completed') {
+      return { alreadyCompleted: true };
+    }
+    if (appointment.status !== 'upcoming' ||
+        typeof appointment.date?.toMillis !== 'function' ||
+        appointment.date.toMillis() > Date.now()) {
+      throw new HttpsError('failed-precondition', 'لا يمكن إكمال موعد غير مستحق أو ملغى.');
+    }
+
+    const serviceId = appointment.serviceId;
+    if (serviceId == null) {
+      transaction.update(appointmentRef, {
+        status: 'completed',
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return { alreadyCompleted: false, nextEligibleAt: null };
+    }
+    if (typeof serviceId !== 'string' || serviceId.trim() === '') {
+      throw new HttpsError('failed-precondition', 'معرّف الخدمة المرتبطة بالموعد غير صالح.');
+    }
+
+    const patientRef = organizationRef.collection('patients').doc(appointment.patientId);
+    const clinicRef = organizationRef.collection('clinics').doc(appointment.clinicId);
+    const clinicAccessRef = patientRef.collection('clinic_access').doc(context.doctorId);
+
+    const serviceRef = db.collection('medical_catalog').doc(serviceId);
+    const usageRef = patientRef.collection('medical_service_usage').doc(serviceId);
+    const historyRef = patientRef.collection('medical_service_history').doc(appointmentId);
+    const permissionRef = organizationRef
+      .collection('medical_service_override_permissions')
+      .doc(context.doctorId);
+    const [patientSnapshot, clinicSnapshot, clinicAccessSnapshot,
+      serviceSnapshot, usageSnapshot, historySnapshot, permissionSnapshot] =
+      await Promise.all([
+        transaction.get(patientRef),
+        transaction.get(clinicRef),
+        transaction.get(clinicAccessRef),
+        transaction.get(serviceRef),
+        transaction.get(usageRef),
+        transaction.get(historyRef),
+        transaction.get(permissionRef),
+      ]);
+
+    if (historySnapshot.exists) {
+      if (appointment.status === 'completed') {
+        return { alreadyCompleted: true };
+      }
+      throw new HttpsError('failed-precondition', 'سجل تقديم هذه الخدمة موجود مسبقًا.');
+    }
+    if (appointment.status !== 'upcoming') {
+      throw new HttpsError('failed-precondition', 'الموعد غير قابل للإكمال مرة أخرى.');
+    }
+
+    const patient = patientSnapshot.data();
+    const clinic = clinicSnapshot.data();
+    const service = serviceSnapshot.data();
+    const directClinicAccess = patient?.doctorId === context.doctorId &&
+      patient?.clinicId === appointment.clinicId;
+    const explicitClinicAccess = clinicAccessSnapshot.exists &&
+      clinicAccessSnapshot.data()?.organizationId === context.organizationId &&
+      clinicAccessSnapshot.data()?.patientId === appointment.patientId &&
+      clinicAccessSnapshot.data()?.doctorId === context.doctorId &&
+      clinicAccessSnapshot.data()?.clinicId === appointment.clinicId;
+    if (patient?.organizationId !== context.organizationId ||
+        clinic == null || clinic.organizationId !== context.organizationId ||
+        !isActiveClinic(clinic.status) ||
+        (!directClinicAccess && !explicitClinicAccess)) {
+      throw new HttpsError('permission-denied', 'المريض أو العيادة غير مرتبطين بالموعد الحالي.');
+    }
+    if (service?.kind !== 'service') {
+      throw new HttpsError('failed-precondition', 'الخدمة المرتبطة بالموعد غير موجودة في الدليل.');
+    }
+
+    const serviceAt = Date.now();
+    const intervalValue = service.repeatIntervalMonths;
+    const repeatIntervalMonths = intervalValue == null ? 0 : intervalValue;
+    if (!Number.isInteger(repeatIntervalMonths) ||
+        repeatIntervalMonths < 0 || repeatIntervalMonths > 1200) {
+      throw new HttpsError('failed-precondition', 'مدة تكرار الخدمة غير صالحة.');
+    }
+    let lastServiceAt = usageSnapshot.data()?.lastServiceAt?.toDate?.() ?? null;
+    const priorAppointments = await transaction.get(
+      organizationRef.collection('appointments')
+        .where('patientId', '==', appointment.patientId),
+    );
+    const priorHistory = await transaction.get(
+      patientRef.collection('medical_service_history')
+        .where('serviceId', '==', serviceId),
+    );
+    for (const priorDocument of priorAppointments.docs) {
+      const priorAppointment = priorDocument.data();
+      if (priorDocument.id === appointmentId ||
+          priorAppointment.serviceId !== serviceId ||
+          priorAppointment.status !== 'completed') continue;
+      const priorServiceAt = priorAppointment.serviceCompletedAt?.toDate?.() ??
+        priorAppointment.date?.toDate?.() ?? null;
+      if (priorServiceAt != null &&
+          (lastServiceAt == null || priorServiceAt > lastServiceAt)) {
+        lastServiceAt = priorServiceAt;
+      }
+    }
+    for (const historyDocument of priorHistory.docs) {
+      const priorServiceAt = historyDocument.data().serviceAt?.toDate?.() ?? null;
+      if (priorServiceAt != null &&
+          (lastServiceAt == null || priorServiceAt > lastServiceAt)) {
+        lastServiceAt = priorServiceAt;
+      }
+    }
+    const previousNextEligibleAt = lastServiceAt == null
+      ? null
+      : serviceEligibilityDate(lastServiceAt, repeatIntervalMonths);
+    const blocked = repeatIntervalMonths > 0 &&
+      isRepeatBlocked(previousNextEligibleAt, serviceAt);
+    const permission = permissionSnapshot.data();
+    const hasOverridePermission = permission?.active === true &&
+      permission.permission === 'service_repeat_override';
+    if (blocked && !hasOverridePermission) {
+      throw new HttpsError(
+        'failed-precondition',
+        `الخدمة متاحة مجددًا في ${previousNextEligibleAt.toISOString().slice(0, 10)}.`,
+      );
+    }
+    if (blocked && overrideReason === '') {
+      throw new HttpsError('invalid-argument', 'أدخل سبب الاستثناء الطبي.');
+    }
+
+    const serviceAtDate = new Date(serviceAt);
+    const nextEligibleAt = serviceEligibilityDate(serviceAtDate, repeatIntervalMonths);
+    const serviceTimestamp = Timestamp.fromDate(serviceAtDate);
+    const nextEligibleTimestamp = nextEligibleAt == null
+      ? null
+      : Timestamp.fromDate(nextEligibleAt);
+    transaction.update(appointmentRef, {
+      status: 'completed',
+      serviceCompletedAt: serviceTimestamp,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    transaction.set(usageRef, {
+      organizationId: context.organizationId,
+      patientId: appointment.patientId,
+      serviceId,
+      lastServiceAt: serviceTimestamp,
+      nextEligibleAt: nextEligibleTimestamp,
+      lastAppointmentId: appointmentId,
+      doctorId: context.doctorId,
+      clinicId: appointment.clinicId,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    transaction.create(historyRef, {
+      id: appointmentId,
+      appointmentId,
+      organizationId: context.organizationId,
+      patientId: appointment.patientId,
+      serviceId,
+      serviceName: service.nameAr || service.nameEn || serviceId,
+      doctorId: context.doctorId,
+      clinicId: appointment.clinicId,
+      serviceAt: serviceTimestamp,
+      repeatIntervalMonths,
+      nextEligibleAt: nextEligibleTimestamp,
+      overrideApplied: blocked,
+      ...(blocked ? { overrideReason, overrideDoctorId: context.doctorId,
+        overrideClinicId: appointment.clinicId } : {}),
+      recordedByUid: context.uid,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    return { alreadyCompleted: false, nextEligibleAt: nextEligibleAt?.toISOString() ?? null };
+  });
+
+  return result;
+});
+
+exports.getMedicalServiceUsage = onCall({ region: 'us-central1' }, async (request) => {
+  const context = await activeDoctorContext(request);
+  const patientId = typeof request.data?.patientId === 'string'
+    ? request.data.patientId.trim()
+    : '';
+  const serviceId = typeof request.data?.serviceId === 'string'
+    ? request.data.serviceId.trim()
+    : '';
+  if (patientId === '' || serviceId === '') {
+    throw new HttpsError('invalid-argument', 'المريض والخدمة مطلوبان.');
+  }
+
+  const patientRef = context.organizationRef.collection('patients').doc(patientId);
+  const clinicAccessRef = patientRef.collection('clinic_access').doc(context.doctorId);
+  const serviceRef = db.collection('medical_catalog').doc(serviceId);
+  const usageRef = patientRef.collection('medical_service_usage').doc(serviceId);
+  const [patientSnapshot, clinicAccessSnapshot, serviceSnapshot, usageSnapshot] =
+    await Promise.all([
+      patientRef.get(),
+      clinicAccessRef.get(),
+      serviceRef.get(),
+      usageRef.get(),
+    ]);
+  const patient = patientSnapshot.data();
+  const clinicAccess = clinicAccessSnapshot.data();
+  const directClinicAccess = patient?.doctorId === context.doctorId &&
+    patient?.clinicId === context.clinicId;
+  const explicitDoctorAccess = clinicAccess?.organizationId === context.organizationId &&
+    clinicAccess.patientId === patientId &&
+    clinicAccess.doctorId === context.doctorId &&
+    clinicAccess.clinicId === context.clinicId;
+  if (patient?.organizationId !== context.organizationId ||
+      (!directClinicAccess && !explicitDoctorAccess)) {
+    throw new HttpsError('permission-denied', 'لا يملك الطبيب صلاحية سجل هذا المريض.');
+  }
+  const service = serviceSnapshot.data();
+  if (service?.kind !== 'service' ||
+      !Array.isArray(context.doctor.serviceIds) ||
+      !context.doctor.serviceIds.includes(serviceId)) {
+    throw new HttpsError('not-found', 'الخدمة غير موجودة في الدليل.');
+  }
+
+  let lastServiceAt = usageSnapshot.data()?.lastServiceAt?.toDate?.() ?? null;
+  const historySnapshot = await patientRef.collection('medical_service_history')
+    .where('serviceId', '==', serviceId)
+    .get();
+  for (const historyDocument of historySnapshot.docs) {
+    const historyAt = historyDocument.data().serviceAt?.toDate?.() ?? null;
+    if (historyAt != null && (lastServiceAt == null || historyAt > lastServiceAt)) {
+      lastServiceAt = historyAt;
+    }
+  }
+  const appointmentSnapshot = await context.organizationRef
+    .collection('appointments')
+    .where('patientId', '==', patientId)
+    .get();
+  for (const appointmentDocument of appointmentSnapshot.docs) {
+    const appointment = appointmentDocument.data();
+    if (appointment.serviceId !== serviceId || appointment.status !== 'completed') continue;
+    const appointmentServiceAt = appointment.serviceCompletedAt?.toDate?.() ??
+      appointment.date?.toDate?.() ?? null;
+    if (appointmentServiceAt != null &&
+        (lastServiceAt == null || appointmentServiceAt > lastServiceAt)) {
+      lastServiceAt = appointmentServiceAt;
+    }
+  }
+
+  const interval = Number.isInteger(service.repeatIntervalMonths)
+    ? service.repeatIntervalMonths
+    : 0;
+  const nextEligibleAt = lastServiceAt == null
+    ? null
+    : serviceEligibilityDate(lastServiceAt, interval);
+  return {
+    lastServiceAt: lastServiceAt?.toISOString() ?? null,
+    nextEligibleAt: nextEligibleAt?.toISOString() ?? null,
+  };
+});
 
 async function activeOrganizationClinicContext(request, clinicId) {
   const { uid, profile } = await authenticatedProfile(request);

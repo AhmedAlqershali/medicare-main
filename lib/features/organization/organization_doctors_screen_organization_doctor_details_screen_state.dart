@@ -2,6 +2,65 @@ part of 'organization_doctors_screen.dart';
 
 class _OrganizationDoctorDetailsScreenState extends State<OrganizationDoctorDetailsScreen> {
   late OrganizationDoctor _doctor = widget.doctor;
+  bool _canManageRepeatOverride = false;
+  bool _repeatOverrideActive = false;
+  bool _loadingOverridePermission = true;
+  bool _savingOverridePermission = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOverridePermission();
+  }
+
+  Future<void> _loadOverridePermission() async {
+    final organizationId = FirebaseAuthRepository.instance.session.organizationId;
+    if (organizationId == null || organizationId.isEmpty) {
+      setState(() => _loadingOverridePermission = false);
+      return;
+    }
+    try {
+      final repository = FirestoreMedicalServiceRepository.instance;
+      final results = await Future.wait([
+        repository.canManageRepeatOverride(organizationId),
+        repository.hasRepeatOverridePermission(
+          organizationId: organizationId,
+          doctorId: _doctor.id,
+        ),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _canManageRepeatOverride = results[0];
+        _repeatOverrideActive = results[1];
+      });
+    } catch (_) {
+      if (mounted) setState(() => _canManageRepeatOverride = false);
+    } finally {
+      if (mounted) setState(() => _loadingOverridePermission = false);
+    }
+  }
+
+  Future<void> _setRepeatOverride(bool active) async {
+    final organizationId = FirebaseAuthRepository.instance.session.organizationId;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (organizationId == null || uid == null) return;
+    setState(() => _savingOverridePermission = true);
+    try {
+      await FirestoreMedicalServiceRepository.instance.setRepeatOverridePermission(
+        organizationId: organizationId,
+        doctorId: _doctor.id,
+        active: active,
+        changedBy: uid,
+      );
+      if (mounted) setState(() => _repeatOverrideActive = active);
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر تحديث صلاحية الاستثناء: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _savingOverridePermission = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -36,6 +95,24 @@ class _OrganizationDoctorDetailsScreenState extends State<OrganizationDoctorDeta
                   InfoRow(icon: Icons.email_outlined, label: 'البريد الإلكتروني', value: _doctor.email),
                 ]),
               ),
+              if (_canManageRepeatOverride && !_loadingOverridePermission) ...[
+                const SizedBox(height: AppSpacing.xl),
+                const SectionHeader(title: 'صلاحيات تكرار الخدمات'),
+                const SizedBox(height: AppSpacing.sm),
+                AppCard(
+                  child: SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    value: _repeatOverrideActive,
+                    onChanged: _savingOverridePermission
+                        ? null
+                        : _setRepeatOverride,
+                    title: const Text('السماح باستثناء قيد تكرار الخدمة'),
+                    subtitle: const Text(
+                      'يتطلب كل استثناء سببًا طبيًا موثقًا باسم الطبيب والعيادة.',
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: AppSpacing.xl),
               const SectionHeader(title: 'الجدول'),
               const SizedBox(height: AppSpacing.sm),
@@ -75,7 +152,6 @@ class _OrganizationDoctorDetailsScreenState extends State<OrganizationDoctorDeta
                     reviews: doctor.reviews,
                     experience: doctor.experience,
                     bio: doctor.bio,
-                    services: doctor.services,
                     firebaseUid: doctor.firebaseUid,
                     createdAt: doctor.createdAt,
                     updatedAt: DateTime.now(),

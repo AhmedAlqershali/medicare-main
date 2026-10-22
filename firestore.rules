@@ -382,9 +382,18 @@ service cloud.firestore {
         && request.resource.data.active is bool
         && request.resource.data.archived is bool
         && (!request.resource.data.archived || !request.resource.data.active)
+        && (
+          !request.resource.data.keys().hasAny(['repeatIntervalMonths'])
+          || (
+            request.resource.data.kind == 'service'
+            && request.resource.data.repeatIntervalMonths is int
+            && request.resource.data.repeatIntervalMonths >= 0
+            && request.resource.data.repeatIntervalMonths <= 1200
+          )
+        )
         && request.resource.data.keys().hasOnly([
           'id', 'kind', 'nameAr', 'nameEn', 'specialtyIds', 'parentId',
-          'active', 'archived', 'updatedAt'
+          'active', 'archived', 'repeatIntervalMonths', 'updatedAt'
         ]);
 
       allow delete: if false;
@@ -1222,10 +1231,18 @@ service cloud.firestore {
         && request.resource.data.notes is string
         && request.resource.data.recommendations is string
         && request.resource.data.nextPlan is string
+        && request.resource.data.caseData is map
+        && (
+          !request.resource.data.keys().hasAny(['nextAppointmentAt'])
+          || (
+            request.resource.data.nextAppointmentAt is timestamp
+            && request.resource.data.nextAppointmentAt > request.resource.data.visitAt
+          )
+        )
         && request.resource.data.keys().hasOnly([
           'id', 'caseId', 'patientId', 'organizationId', 'doctorId', 'clinicId',
           'visitAt', 'assessment', 'notes', 'recommendations', 'nextPlan',
-          'createdAt', 'appointmentId'
+          'caseData', 'nextAppointmentAt', 'createdAt', 'appointmentId'
         ])
         && (
           !request.resource.data.keys().hasAny(['appointmentId'])
@@ -1236,6 +1253,9 @@ service cloud.firestore {
             && get(/databases/$(database)/documents/organizations/$(organizationId)/appointments/$(request.resource.data.appointmentId)).data.status == 'completed'
             && get(/databases/$(database)/documents/organizations/$(organizationId)/appointments/$(request.resource.data.appointmentId)).data.date is timestamp
             && get(/databases/$(database)/documents/organizations/$(organizationId)/appointments/$(request.resource.data.appointmentId)).data.date <= request.time
+            && get(/databases/$(database)/documents/organizations/$(organizationId)/appointments/$(request.resource.data.appointmentId)).data.date.year() == request.resource.data.visitAt.year()
+            && get(/databases/$(database)/documents/organizations/$(organizationId)/appointments/$(request.resource.data.appointmentId)).data.date.month() == request.resource.data.visitAt.month()
+            && get(/databases/$(database)/documents/organizations/$(organizationId)/appointments/$(request.resource.data.appointmentId)).data.date.day() == request.resource.data.visitAt.day()
             && get(/databases/$(database)/documents/organizations/$(organizationId)/appointments/$(request.resource.data.appointmentId)).data.organizationId == organizationId
             && get(/databases/$(database)/documents/organizations/$(organizationId)/appointments/$(request.resource.data.appointmentId)).data.patientId == patientId
             && get(/databases/$(database)/documents/organizations/$(organizationId)/appointments/$(request.resource.data.appointmentId)).data.doctorId == request.resource.data.doctorId
@@ -1244,6 +1264,64 @@ service cloud.firestore {
         );
 
       allow update, delete: if false;
+    }
+
+    match /organizations/{organizationId}/patients/{patientId}/medical_service_usage/{serviceId} {
+      allow read: if signedIn()
+        && exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId))
+        && (
+          isAdmin()
+          || ownsActiveOrganization(organizationId)
+          || organizationUserForPatient(organizationId, patientId)
+          || isCurrentPatientAccess(organizationId, patientId)
+          || isDoctorCaseAccess(
+            organizationId,
+            patientDocument(organizationId, patientId).data.get('doctorId', null),
+            patientId,
+            patientDocument(organizationId, patientId).data.get('clinicId', null)
+          )
+        );
+
+      allow create, update, delete: if false;
+    }
+
+    match /organizations/{organizationId}/patients/{patientId}/medical_service_history/{recordId} {
+      allow read: if signedIn()
+        && exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId))
+        && (
+          isAdmin()
+          || ownsActiveOrganization(organizationId)
+          || organizationUserForPatient(organizationId, patientId)
+          || isCurrentPatientAccess(organizationId, patientId)
+          || isDoctorCaseAccess(
+            organizationId,
+            patientDocument(organizationId, patientId).data.get('doctorId', null),
+            patientId,
+            patientDocument(organizationId, patientId).data.get('clinicId', null)
+          )
+        );
+
+      allow create, update, delete: if false;
+    }
+
+    match /organizations/{organizationId}/medical_service_override_permissions/{doctorId} {
+      allow read: if signedIn() && (
+        isAdmin()
+        || ownsActiveOrganization(organizationId)
+        || isCurrentDoctorForOrganization(organizationId, doctorId)
+      );
+
+      allow create, update: if (isAdmin() || ownsActiveOrganization(organizationId))
+        && request.resource.data.doctorId == doctorId
+        && request.resource.data.permission == 'service_repeat_override'
+        && request.resource.data.active is bool
+        && request.resource.data.changedBy == request.auth.uid
+        && exists(/databases/$(database)/documents/organizations/$(organizationId)/doctors/$(doctorId))
+        && request.resource.data.keys().hasOnly([
+          'doctorId', 'permission', 'active', 'changedBy', 'updatedAt', 'grantedAt'
+        ]);
+
+      allow delete: if false;
     }
 
     // ============================================================
@@ -1351,11 +1429,21 @@ service cloud.firestore {
         && request.resource.data.clinicId is string
         && request.resource.data.doctorId is string
         && request.resource.data.patientId is string
+        && (
+          !request.resource.data.keys().hasAny(['serviceId'])
+          || (
+            request.resource.data.serviceId is string
+            && request.resource.data.serviceName is string
+            && isActiveMedicalCatalogEntry(request.resource.data.serviceId, 'service')
+            && get(/databases/$(database)/documents/organizations/$(organizationId)/doctors/$(request.resource.data.doctorId)).data.get('serviceIds', []) is list
+            && get(/databases/$(database)/documents/organizations/$(organizationId)/doctors/$(request.resource.data.doctorId)).data.get('serviceIds', []).hasAny([request.resource.data.serviceId])
+          )
+        )
         && request.resource.data.keys().hasOnly([
           'id', 'organizationId', 'clinicId', 'doctorId', 'patientId',
           'patientUid', 'patientName', 'patientInitials', 'age', 'gender',
           'doctorName', 'doctorInitials', 'specialty', 'clinicName', 'location',
-          'date', 'time', 'type', 'status', 'notes', 'avatarColorValue',
+          'date', 'time', 'type', 'status', 'notes', 'serviceId', 'serviceName', 'avatarColorValue',
           'createdAt', 'updatedAt', 'createdBy'
         ])
         && getAfter(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(request.resource.data.patientId)).data.organizationId == organizationId
@@ -1421,6 +1509,8 @@ service cloud.firestore {
           request.resource.data.get('status', resource.data.status) != 'completed'
           || resource.data.status == 'completed'
           || (
+            !resource.data.keys().hasAny(['serviceId'])
+            &&
             resource.data.date is timestamp
             && resource.data.date <= request.time
             && request.resource.data.date == resource.data.date

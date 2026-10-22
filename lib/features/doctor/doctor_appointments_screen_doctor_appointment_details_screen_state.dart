@@ -5,6 +5,32 @@ class _DoctorAppointmentDetailsScreenState extends State<DoctorAppointmentDetail
   late String _date = widget.appointment.date;
   late String _time = widget.appointment.time;
   bool _saving = false;
+  MedicalServiceUsage? _serviceUsage;
+  bool _loadingServiceUsage = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadServiceUsage();
+  }
+
+  Future<void> _loadServiceUsage() async {
+    final serviceId = widget.appointment.serviceId;
+    if (serviceId == null || serviceId.isEmpty) return;
+    setState(() => _loadingServiceUsage = true);
+    try {
+      final usage = await FirestoreMedicalServiceRepository.instance.fetchUsage(
+        organizationId: widget.appointment.organizationId,
+        patientId: widget.appointment.patientId,
+        serviceId: serviceId,
+      );
+      if (mounted) setState(() => _serviceUsage = usage);
+    } catch (_) {
+      // The completion callable remains the authoritative eligibility check.
+    } finally {
+      if (mounted) setState(() => _loadingServiceUsage = false);
+    }
+  }
 
   Future<void> _saveStatus(DoctorAppointmentFilter status) async {
     final organizationId = FirebaseAuthRepository.instance.session.organizationId;
@@ -14,6 +40,28 @@ class _DoctorAppointmentDetailsScreenState extends State<DoctorAppointmentDetail
     }
     setState(() => _saving = true);
     try {
+      String? overrideReason;
+      if (status == DoctorAppointmentFilter.completed &&
+          widget.appointment.serviceId != null) {
+        final usage = _serviceUsage ?? await FirestoreMedicalServiceRepository.instance.fetchUsage(
+          organizationId: organizationId,
+          patientId: widget.appointment.patientId,
+          serviceId: widget.appointment.serviceId!,
+        );
+        final nextEligibleAt = usage.nextEligibleAt;
+        if (nextEligibleAt != null && nextEligibleAt.isAfter(DateTime.now())) {
+          final allowed = await FirestoreMedicalServiceRepository.instance
+              .hasRepeatOverridePermission(
+            organizationId: organizationId,
+            doctorId: widget.appointment.doctorId,
+          );
+          if (!allowed) {
+            throw StateError('الخدمة غير مستحقة حتى ${_dateLabel(nextEligibleAt)}.');
+          }
+          overrideReason = await _requestOverrideReason(nextEligibleAt);
+          if (overrideReason == null || overrideReason.trim().isEmpty) return;
+        }
+      }
       await FirestoreAppointmentRepository.instance.saveAppointment(
         organizationId: organizationId,
         appointment: {
@@ -23,14 +71,56 @@ class _DoctorAppointmentDetailsScreenState extends State<DoctorAppointmentDetail
             DoctorAppointmentFilter.cancelled => 'cancelled',
             _ => 'upcoming',
           },
+          if (overrideReason != null)
+            'serviceRepeatOverrideReason': overrideReason,
         },
       );
       if (mounted) setState(() => _status = status);
+      if (status == DoctorAppointmentFilter.completed) _loadServiceUsage();
     } catch (error) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  String _dateLabel(DateTime date) =>
+      '${date.day.toString().padLeft(2, '0')}/'
+      '${date.month.toString().padLeft(2, '0')}/'
+      '${date.year}';
+
+  Future<String?> _requestOverrideReason(DateTime nextEligibleAt) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('استثناء قيد تكرار الخدمة'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('موعد الاستحقاق المعتاد ${_dateLabel(nextEligibleAt)}.'),
+            const SizedBox(height: AppSpacing.md),
+            TextField(
+              controller: controller,
+              maxLines: 3,
+              decoration: const InputDecoration(labelText: 'السبب الطبي للاستثناء'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('إلغاء')),
+          FilledButton(
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                Navigator.pop(dialogContext, controller.text.trim());
+              }
+            },
+            child: const Text('متابعة الإكمال'),
+          ),
+        ],
+      ),
+    ).whenComplete(controller.dispose);
   }
 
   Future<void> _reschedule() async {
@@ -186,6 +276,34 @@ class _DoctorAppointmentDetailsScreenState extends State<DoctorAppointmentDetail
                     _DetailRow(label: 'الوقت', value: appointment.time, icon: Icons.schedule_outlined),
                     const Divider(height: AppSpacing.lg),
                     _DetailRow(label: 'نوع الموعد', value: appointment.type, icon: Icons.medical_services_outlined),
+                    if (appointment.serviceId != null) ...[
+                      const Divider(height: AppSpacing.lg),
+                      _DetailRow(
+                        label: 'الخدمة الطبية',
+                        value: appointment.serviceName.isEmpty
+                            ? appointment.serviceId!
+                            : appointment.serviceName,
+                        icon: Icons.health_and_safety_outlined,
+                      ),
+                      const Divider(height: AppSpacing.lg),
+                      _DetailRow(
+                        label: 'آخر خدمة',
+                        value: _loadingServiceUsage
+                            ? 'جارٍ التحميل'
+                            : _serviceUsage?.lastServiceAt == null
+                                ? 'لا يوجد سجل سابق'
+                                : _dateLabel(_serviceUsage!.lastServiceAt!),
+                        icon: Icons.history,
+                      ),
+                      if (_serviceUsage?.nextEligibleAt != null) ...[
+                        const Divider(height: AppSpacing.lg),
+                        _DetailRow(
+                          label: 'الاستحقاق القادم',
+                          value: _dateLabel(_serviceUsage!.nextEligibleAt!),
+                          icon: Icons.event_available_outlined,
+                        ),
+                      ],
+                    ],
                     const Divider(height: AppSpacing.lg),
                     _DetailRow(label: 'الحالة', value: appointment.statusLabel, icon: Icons.info_outline, valueColor: appointment.statusColor),
                   ],

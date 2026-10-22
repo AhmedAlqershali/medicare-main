@@ -8,6 +8,7 @@ class MedicalCatalogEntry {
     this.nameEn = '',
     this.specialtyIds = const [],
     this.parentId,
+    this.repeatIntervalMonths,
     this.active = true,
     this.archived = false,
   });
@@ -18,6 +19,7 @@ class MedicalCatalogEntry {
   final String nameEn;
   final List<String> specialtyIds;
   final String? parentId;
+  final int? repeatIntervalMonths;
   final bool active;
   final bool archived;
 
@@ -38,6 +40,7 @@ class MedicalCatalogEntry {
               .toList() ??
           const [],
       parentId: map['parentId'] as String?,
+      repeatIntervalMonths: (map['repeatIntervalMonths'] as num?)?.toInt(),
       active: map['active'] as bool? ?? true,
       archived: map['archived'] as bool? ?? false,
     );

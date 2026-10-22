@@ -94,19 +94,33 @@ class _MedicalCatalogScreenState extends State<MedicalCatalogScreen> {
       if (!entries.any((entry) => entry.kind == MedicalCatalogKind.service)) {
         for (final item in [
           if (womenHealth != null)
-            ('service_pregnancy_follow_up', 'متابعة الحمل', womenHealth.id),
+            ('service_pregnancy_follow_up', 'متابعة الحمل', womenHealth.id, null),
           if (eyeCare != null)
-            ('service_eye_assessment', 'تقييم النظر', eyeCare.id),
+            ('service_eye_assessment', 'تقييم النظر', eyeCare.id, null),
           if (dentalCare != null)
-            ('service_dental_assessment', 'تقييم صحة الفم والأسنان', dentalCare.id),
+            ('service_dental_assessment', 'تقييم صحة الفم والأسنان', dentalCare.id, null),
         ]) {
           await repository.saveEntry(MedicalCatalogEntry(
             id: item.$1,
             kind: MedicalCatalogKind.service,
             nameAr: item.$2,
             specialtyIds: [item.$3],
+            repeatIntervalMonths: item.$4 as int?,
           ));
         }
+      }
+      entries = await repository.fetchEntries(includeInactive: true);
+      if (eyeCare != null &&
+          !entries.any((entry) =>
+              entry.kind == MedicalCatalogKind.service &&
+              (entry.id == 'service_glasses' || entry.nameAr == 'خدمة النظارات'))) {
+        await repository.saveEntry(MedicalCatalogEntry(
+          id: 'service_glasses',
+          kind: MedicalCatalogKind.service,
+          nameAr: 'خدمة النظارات',
+          specialtyIds: [eyeCare.id],
+          repeatIntervalMonths: 12,
+        ));
       }
       entries = await repository.fetchEntries(includeInactive: true);
       if (!mounted) return;
@@ -172,6 +186,7 @@ class _MedicalCatalogScreenState extends State<MedicalCatalogScreen> {
           nameEn: entry.nameEn,
           specialtyIds: entry.specialtyIds,
           parentId: entry.parentId,
+          repeatIntervalMonths: entry.repeatIntervalMonths,
           active: active ?? entry.active,
           archived: archived ?? entry.archived,
         ),
@@ -263,6 +278,10 @@ class _MedicalCatalogScreenState extends State<MedicalCatalogScreen> {
                                             if (entry.parentId != null)
                                               'فرعي من ${_entries.where((item) => item.id == entry.parentId).firstOrNull?.displayName ?? ''}',
                                             if (linked.isNotEmpty) linked,
+                                            if (entry.kind == MedicalCatalogKind.service)
+                                              entry.repeatIntervalMonths == null || entry.repeatIntervalMonths == 0
+                                                  ? 'بلا قيد تكرار'
+                                                  : 'مدة المنع: ${entry.repeatIntervalMonths} شهر',
                                             if (inactive) 'معطل أو مؤرشف',
                                           ].join(' • ')),
                                           trailing: PopupMenuButton<String>(
@@ -316,6 +335,9 @@ class _CatalogEntryDialog extends StatefulWidget {
 class _CatalogEntryDialogState extends State<_CatalogEntryDialog> {
   late final _arabic = TextEditingController(text: widget.initial?.nameAr ?? '');
   late final _english = TextEditingController(text: widget.initial?.nameEn ?? '');
+  late final _repeatMonths = TextEditingController(
+    text: widget.initial?.repeatIntervalMonths?.toString() ?? '',
+  );
   late MedicalCatalogKind _kind = widget.initial?.kind ?? widget.defaultKind;
   late String? _parentId = widget.initial?.parentId;
   late Set<String> _specialtyIds = widget.initial?.specialtyIds.toSet() ?? {};
@@ -324,6 +346,7 @@ class _CatalogEntryDialogState extends State<_CatalogEntryDialog> {
   void dispose() {
     _arabic.dispose();
     _english.dispose();
+    _repeatMonths.dispose();
     super.dispose();
   }
 
@@ -354,6 +377,14 @@ class _CatalogEntryDialogState extends State<_CatalogEntryDialog> {
                 ),
               TextField(controller: _arabic, decoration: const InputDecoration(labelText: 'الاسم بالعربية')),
               TextField(controller: _english, decoration: const InputDecoration(labelText: 'الاسم بالإنجليزية (اختياري)'), textDirection: TextDirection.ltr),
+              if (_kind == MedicalCatalogKind.service)
+                TextField(
+                  controller: _repeatMonths,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'مدة منع التكرار بالأشهر (فارغ أو 0 بلا قيد)',
+                  ),
+                ),
               if (_kind == MedicalCatalogKind.specialty)
                 DropdownButtonFormField<String?>(
                   value: _parentId,
@@ -399,6 +430,15 @@ class _CatalogEntryDialogState extends State<_CatalogEntryDialog> {
             onPressed: () {
               if (_arabic.text.trim().isEmpty && _english.text.trim().isEmpty) return;
               if (_kind != MedicalCatalogKind.specialty && _specialtyIds.isEmpty) return;
+              final repeatMonths = _kind == MedicalCatalogKind.service &&
+                      _repeatMonths.text.trim().isNotEmpty
+                  ? int.tryParse(_repeatMonths.text.trim())
+                  : null;
+              if (_kind == MedicalCatalogKind.service &&
+                  _repeatMonths.text.trim().isNotEmpty &&
+                  (repeatMonths == null || repeatMonths < 0 || repeatMonths > 1200)) {
+                return;
+              }
               final id = widget.initial?.id ??
                   FirestoreMedicalCatalogRepository.instance.newId();
               Navigator.pop(
@@ -410,6 +450,7 @@ class _CatalogEntryDialogState extends State<_CatalogEntryDialog> {
                   nameEn: _english.text.trim(),
                   specialtyIds: _specialtyIds.toList(),
                   parentId: _parentId,
+                  repeatIntervalMonths: repeatMonths,
                   active: widget.initial?.active ?? true,
                   archived: widget.initial?.archived ?? false,
                 ),

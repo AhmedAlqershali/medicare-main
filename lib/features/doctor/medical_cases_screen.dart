@@ -6,6 +6,8 @@ import '../../core/auth/models/medical_catalog_entry.dart';
 import '../../core/auth/models/pregnancy_details.dart';
 import '../../core/firestore/appointment_date_time.dart';
 import '../../core/firestore/repositories/firestore_appointment_repository.dart';
+import '../../core/firestore/repositories/firestore_clinic_repository.dart';
+import '../../core/firestore/repositories/firestore_doctor_repository.dart';
 import '../../core/firestore/repositories/firestore_medical_case_repository.dart';
 import '../../core/firestore/repositories/firestore_medical_catalog_repository.dart';
 import '../../core/theme/app_theme.dart';
@@ -236,6 +238,8 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
   late MedicalCase _medicalCase = widget.medicalCase;
   List<ClinicalFollowUp> _followUps = const [];
   List<Map<String, dynamic>> _completedAppointments = const [];
+  String _doctorName = '';
+  String _clinicName = '';
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -254,6 +258,25 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
     try {
       final followUps = await FirestoreMedicalCaseRepository.instance
           .fetchFollowUps(medicalCase: _medicalCase);
+      var doctorName = _medicalCase.doctorId;
+      var clinicName = _medicalCase.clinicId;
+      try {
+        final doctor = await FirestoreDoctorRepository.instance
+            .fetchDoctorByIdForOrganization(
+          _medicalCase.organizationId,
+          _medicalCase.doctorId,
+        );
+        final clinic = await FirestoreClinicRepository.instance.fetchClinicById(
+          _medicalCase.organizationId,
+          _medicalCase.clinicId,
+        );
+        doctorName = doctor?.name.trim().isNotEmpty == true
+            ? doctor!.name
+            : doctorName;
+        clinicName = clinic?['name'] as String? ?? clinicName;
+      } catch (_) {
+        // Keep the record visible if directory names are unavailable.
+      }
       var appointments = <Map<String, dynamic>>[];
       if (widget.allowClinicalWrites) {
         final allAppointments = await FirestoreAppointmentRepository.instance
@@ -277,6 +300,8 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
       setState(() {
         _followUps = followUps;
         _completedAppointments = appointments;
+        _doctorName = doctorName;
+        _clinicName = clinicName;
       });
     } catch (error) {
       if (!mounted) return;
@@ -292,6 +317,7 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
       context: context,
       builder: (_) => _FollowUpFormDialog(
         completedAppointments: _completedAppointments,
+        medicalCase: _medicalCase,
       ),
     );
     if (values == null || !mounted) return;
@@ -304,6 +330,8 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
         notes: values['notes']! as String,
         recommendations: values['recommendations']! as String,
         nextPlan: values['nextPlan']! as String,
+        caseData: values['caseData']! as Map<String, dynamic>,
+        nextAppointmentAt: values['nextAppointmentAt'] as DateTime?,
         appointmentId: values['appointmentId'] as String?,
       );
       await _loadDetails();
@@ -391,11 +419,11 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
     final progress = pregnancy.progressAt(asOf);
     return [
       _field(
-        'عمر الحمل الحالي',
+        pregnancy.endedAt == null ? 'عمر الحمل الحالي' : 'عمر الحمل عند الانتهاء',
         '${progress.weeks} أسبوع و${progress.days} يوم',
       ),
       _field(
-        'الشهر الحالي',
+        pregnancy.endedAt == null ? 'الشهر الحالي' : 'الشهر عند الانتهاء',
         'الشهر التقويمي ${progress.calendarMonth}${pregnancy.monthIsApproximate ? ' (تقديري)' : ''}',
       ),
       if (pregnancy.outcome == null)
@@ -432,9 +460,11 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
     final pregnancyProgress = pregnancy?.progressAt(DateTime.now());
     final needsPregnancyReview = widget.allowClinicalWrites &&
         pregnancyProgress != null &&
-        pregnancyProgress.calendarMonth >= 9 &&
+      pregnancyProgress.isInNinthMonth &&
         pregnancy?.outcome == null &&
         _medicalCase.status != 'archived';
+    final approachingNinthMonth = pregnancyProgress?.isApproachingNinthMonth == true &&
+      pregnancy?.outcome == null;
     return Scaffold(
         appBar: AppBar(title: const Text('تفاصيل الحالة')),
         body: SafeArea(
@@ -495,6 +525,31 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
                                             color: Theme.of(context)
                                                 .colorScheme
                                                 .onErrorContainer,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                              if (approachingNinthMonth) ...[
+                                const SizedBox(height: AppSpacing.sm),
+                                Container(
+                                  padding: const EdgeInsets.all(AppSpacing.md),
+                                  color: Theme.of(context).colorScheme.tertiaryContainer,
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(
+                                        Icons.notifications_active_outlined,
+                                        color: Theme.of(context).colorScheme.onTertiaryContainer,
+                                      ),
+                                      const SizedBox(width: AppSpacing.sm),
+                                      Expanded(
+                                        child: Text(
+                                          'اقترب الحمل من الشهر التاسع. يُنصح بمراجعة خطة المتابعة؛ لا يعني ذلك انتهاء الحمل.',
+                                          style: TextStyle(
+                                            color: Theme.of(context).colorScheme.onTertiaryContainer,
                                           ),
                                         ),
                                       ),
@@ -607,31 +662,7 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
                             message: 'تُسجل الزيارات السريرية التي حدثت هنا.',
                             icon: Icons.history,
                           )
-                        else
-                          for (final followUp in _followUps)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                              child: AppCard(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _formatDate(followUp.visitAt),
-                                      style: Theme.of(context).textTheme.labelLarge,
-                                    ),
-                                    if (followUp.appointmentId != null) ...[
-                                      const SizedBox(height: AppSpacing.xs),
-                                      Text('موعد مرتبط: ${followUp.appointmentId}'),
-                                    ],
-                                    const SizedBox(height: AppSpacing.md),
-                                    _field('التقييم', followUp.assessment),
-                                    _field('الملاحظات', followUp.notes),
-                                    _field('التوصيات', followUp.recommendations),
-                                    _field('الخطة القادمة', followUp.nextPlan),
-                                  ],
-                                ),
-                              ),
-                            ),
+                        else ..._followUpTimeline(),
                       ],
                     ),
         ),
@@ -646,6 +677,88 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
         'other' => 'نتيجة أخرى',
         _ => outcome,
       };
+
+  List<Widget> _followUpTimeline() {
+    final today = DateTime.now();
+    final todayStart = DateTime(today.year, today.month, today.day);
+    final previous = _followUps
+        .where((item) => item.visitAt.isBefore(todayStart))
+        .toList()
+      ..sort((first, second) => second.visitAt.compareTo(first.visitAt));
+    final current = _followUps.where((item) =>
+        item.visitAt.year == today.year &&
+        item.visitAt.month == today.month &&
+        item.visitAt.day == today.day).toList();
+    final upcoming = _followUps
+        .where((item) =>
+            item.nextAppointmentAt != null &&
+            !item.nextAppointmentAt!.isBefore(todayStart))
+        .toList()
+      ..sort((first, second) =>
+          first.nextAppointmentAt!.compareTo(second.nextAppointmentAt!));
+
+    return [
+      if (previous.isNotEmpty) ...[
+        _timelineHeader('المتابعات السابقة'),
+        for (final item in previous) _followUpCard(item),
+      ],
+      if (current.isNotEmpty) ...[
+        _timelineHeader('متابعة اليوم'),
+        for (final item in current) _followUpCard(item),
+      ],
+      if (upcoming.isNotEmpty) ...[
+        _timelineHeader('المواعيد القادمة'),
+        for (final item in upcoming)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: AppCard(
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.event_available_outlined),
+                title: Text(_formatDate(item.nextAppointmentAt!)),
+                subtitle: Text('موعد مخطط من متابعة ${_formatDate(item.visitAt)}'),
+              ),
+            ),
+          ),
+      ],
+      if (previous.isEmpty && current.isEmpty && upcoming.isEmpty)
+        const EmptyState(
+          title: 'لا توجد متابعات سابقة أو مواعيد قادمة',
+          message: 'ستظهر السجلات الطبية والمواعيد هنا.',
+          icon: Icons.history,
+        ),
+    ];
+  }
+
+  Widget _timelineHeader(String title) => Padding(
+        padding: const EdgeInsets.only(top: AppSpacing.sm, bottom: AppSpacing.xs),
+        child: Text(title, style: Theme.of(context).textTheme.titleSmall),
+      );
+
+  Widget _followUpCard(ClinicalFollowUp followUp) => Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+        child: AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(_formatDate(followUp.visitAt),
+                  style: Theme.of(context).textTheme.labelLarge),
+              _field('الطبيب', _doctorName),
+              _field('العيادة', _clinicName),
+              if (followUp.appointmentId != null)
+                _field('معرّف الموعد المكتمل', followUp.appointmentId!),
+              _field('التقييم', followUp.assessment),
+              _field('الملاحظات الطبية', followUp.notes),
+              _field('التوصيات', followUp.recommendations),
+              _field('الخطة القادمة', followUp.nextPlan),
+              for (final entry in followUp.caseData.entries)
+                _field(entry.key, entry.value.toString()),
+              if (followUp.nextAppointmentAt != null)
+                _field('الموعد القادم', _formatDate(followUp.nextAppointmentAt!)),
+            ],
+          ),
+        ),
+      );
 }
 
 class _MedicalCaseFormDialog extends StatefulWidget {
@@ -1003,9 +1116,13 @@ class _PregnancyOutcomeDialogState extends State<_PregnancyOutcomeDialog> {
 }
 
 class _FollowUpFormDialog extends StatefulWidget {
-  const _FollowUpFormDialog({required this.completedAppointments});
+  const _FollowUpFormDialog({
+    required this.completedAppointments,
+    required this.medicalCase,
+  });
 
   final List<Map<String, dynamic>> completedAppointments;
+  final MedicalCase medicalCase;
 
   @override
   State<_FollowUpFormDialog> createState() => _FollowUpFormDialogState();
@@ -1014,13 +1131,46 @@ class _FollowUpFormDialog extends StatefulWidget {
 class _FollowUpFormDialogState extends State<_FollowUpFormDialog> {
   final _formKey = GlobalKey<FormState>();
   final _controllers = List.generate(4, (_) => TextEditingController());
+  late final List<_CaseDataInput> _caseInputs = _suggestedFields()
+      .map((label) => _CaseDataInput(label: label))
+      .toList();
+  final List<_CaseDataInput> _customInputs = [];
   DateTime _visitAt = DateTime.now();
+  DateTime? _nextAppointmentAt;
+  bool _scheduleNextAppointment = false;
   String _appointmentId = '';
+
+  List<String> _suggestedFields() {
+    final type = widget.medicalCase.type.toLowerCase();
+    if (type.contains('pregnancy') || type.contains('حمل')) {
+      return ['عمر الحمل', 'ضغط الدم', 'الوزن', 'حركة الجنين'];
+    }
+    if (type.contains('eye') ||
+      type.contains('ophthalm') ||
+      type.contains('عين') ||
+      type.contains('عيون') ||
+      type.contains('نظارات')) {
+      return ['حدة الإبصار اليمنى', 'حدة الإبصار اليسرى', 'ضغط العين', 'العين/الجهة'];
+    }
+    if (type.contains('dental') || type.contains('dent') || type.contains('أسنان')) {
+      return ['السن أو المنطقة', 'الإجراء', 'حالة الألم', 'ملاحظات الفحص'];
+    }
+    if (type.contains('injury') || type.contains('إصابة') || type.contains('trauma')) {
+      return ['موضع الإصابة', 'درجة الألم', 'الحركة', 'ملاحظات الفحص'];
+    }
+    if (type.contains('chronic') || type.contains('مزمن') || type.contains('diabetes') || type.contains('ضغط')) {
+      return ['ضغط الدم', 'السكر', 'الوزن', 'الالتزام بالخطة'];
+    }
+    return ['ضغط الدم', 'النبض', 'الوزن', 'درجة الحرارة'];
+  }
 
   @override
   void dispose() {
     for (final controller in _controllers) {
       controller.dispose();
+    }
+    for (final input in [..._caseInputs, ..._customInputs]) {
+      input.dispose();
     }
     super.dispose();
   }
@@ -1032,7 +1182,34 @@ class _FollowUpFormDialogState extends State<_FollowUpFormDialog> {
       firstDate: DateTime(1900),
       lastDate: DateTime.now(),
     );
-    if (picked != null) setState(() => _visitAt = picked);
+    if (picked != null) {
+      setState(() {
+        _visitAt = picked;
+        if (_nextAppointmentAt != null &&
+            !_nextAppointmentAt!.isAfter(picked)) {
+          _nextAppointmentAt = DateTime(
+            picked.year,
+            picked.month,
+            picked.day,
+          ).add(const Duration(days: 7));
+        }
+      });
+    }
+  }
+
+  Future<void> _pickNextAppointment() async {
+    final visitDate = DateTime(_visitAt.year, _visitAt.month, _visitAt.day);
+    final firstAvailableDate = visitDate.add(const Duration(days: 1));
+    final suggestedDate = _nextAppointmentAt ?? visitDate.add(const Duration(days: 7));
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: suggestedDate.isBefore(firstAvailableDate)
+          ? firstAvailableDate
+          : suggestedDate,
+      firstDate: firstAvailableDate,
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) setState(() => _nextAppointmentAt = picked);
   }
 
   @override
@@ -1098,6 +1275,14 @@ class _FollowUpFormDialogState extends State<_FollowUpFormDialog> {
                                 appointmentAt.month,
                                 appointmentAt.day,
                               );
+                              if (_nextAppointmentAt != null &&
+                                  !_nextAppointmentAt!.isAfter(_visitAt)) {
+                                _nextAppointmentAt = DateTime(
+                                  _visitAt.year,
+                                  _visitAt.month,
+                                  _visitAt.day,
+                                ).add(const Duration(days: 7));
+                              }
                             }
                             break;
                           }
@@ -1105,10 +1290,47 @@ class _FollowUpFormDialogState extends State<_FollowUpFormDialog> {
                       },
                     ),
                   const SizedBox(height: AppSpacing.sm),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text('بيانات الحالة والقياسات', style: Theme.of(context).textTheme.titleSmall),
+                  ),
+                  for (final input in _caseInputs) _dataInput(input),
+                  for (final input in _customInputs) _dataInput(input, removable: true),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () => setState(() => _customInputs.add(_CaseDataInput())),
+                      icon: const Icon(Icons.add),
+                      label: const Text('إضافة قياس أو بيان'),
+                    ),
+                  ),
                   _input(0, 'التقييم', required: true, maxLines: 3),
                   _input(1, 'الملاحظات', maxLines: 3),
                   _input(2, 'التوصيات', maxLines: 3),
                   _input(3, 'الخطة القادمة', maxLines: 3),
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    value: _scheduleNextAppointment,
+                    title: const Text('تحديد موعد قادم'),
+                    onChanged: (value) => setState(() {
+                      _scheduleNextAppointment = value;
+                      if (value && _nextAppointmentAt == null) {
+                        _nextAppointmentAt = DateTime(
+                          _visitAt.year,
+                          _visitAt.month,
+                          _visitAt.day,
+                        ).add(const Duration(days: 7));
+                      }
+                    }),
+                  ),
+                  if (_scheduleNextAppointment)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('تاريخ الموعد القادم'),
+                      subtitle: Text(_formatDate(_nextAppointmentAt!)),
+                      trailing: const Icon(Icons.event_outlined),
+                      onTap: _pickNextAppointment,
+                    ),
                 ],
               ),
             ),
@@ -1128,6 +1350,15 @@ class _FollowUpFormDialogState extends State<_FollowUpFormDialog> {
                 'notes': _controllers[1].text,
                 'recommendations': _controllers[2].text,
                 'nextPlan': _controllers[3].text,
+                'caseData': {
+                  for (final input in [..._caseInputs, ..._customInputs])
+                    if (input.label.text.trim().isNotEmpty &&
+                        input.value.text.trim().isNotEmpty)
+                      input.label.text.trim(): input.value.text.trim(),
+                },
+                'nextAppointmentAt': _scheduleNextAppointment
+                    ? _nextAppointmentAt
+                    : null,
                 'appointmentId': _appointmentId.isEmpty ? null : _appointmentId,
               });
             },
@@ -1151,6 +1382,45 @@ class _FollowUpFormDialogState extends State<_FollowUpFormDialog> {
               : null,
         ),
       );
+
+  Widget _dataInput(_CaseDataInput input, {bool removable = false}) => Row(
+        children: [
+          if (removable)
+            IconButton(
+              tooltip: 'إزالة البيان',
+              onPressed: () => setState(() {
+                _customInputs.remove(input);
+                input.dispose();
+              }),
+              icon: const Icon(Icons.remove_circle_outline),
+            ),
+          Expanded(
+            child: TextField(
+              controller: input.label,
+              decoration: const InputDecoration(labelText: 'البيان'),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: TextField(
+              controller: input.value,
+              decoration: const InputDecoration(labelText: 'القيمة'),
+            ),
+          ),
+        ],
+      );
+}
+
+class _CaseDataInput {
+  _CaseDataInput({String label = ''}) : label = TextEditingController(text: label);
+
+  final TextEditingController label;
+  final TextEditingController value = TextEditingController();
+
+  void dispose() {
+    label.dispose();
+    value.dispose();
+  }
 }
 
 class _ErrorView extends StatelessWidget {

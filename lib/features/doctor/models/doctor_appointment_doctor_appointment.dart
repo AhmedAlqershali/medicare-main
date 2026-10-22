@@ -1,7 +1,7 @@
 part of 'doctor_appointment.dart';
 
 class DoctorAppointment {
-  const DoctorAppointment({required this.id, required this.organizationId, required this.doctorId, required this.patientId, required this.clinicId, required this.patientName, required this.patientInitials, required this.age, required this.gender, required this.date, required this.time, required this.type, required this.status, required this.notes, required this.avatarColor});
+  const DoctorAppointment({required this.id, required this.organizationId, required this.doctorId, required this.patientId, required this.clinicId, required this.patientName, required this.patientInitials, required this.age, required this.gender, required this.date, required this.time, required this.type, required this.status, required this.notes, required this.avatarColor, this.serviceId, this.serviceName = ''});
   final String id;
   final String organizationId;
   final String doctorId;
@@ -17,8 +17,10 @@ class DoctorAppointment {
   final DoctorAppointmentFilter status;
   final String notes;
   final Color avatarColor;
+  final String? serviceId;
+  final String serviceName;
 
   String get statusLabel => switch (status) { DoctorAppointmentFilter.today => 'اليوم', DoctorAppointmentFilter.upcoming => 'قادم', DoctorAppointmentFilter.previous => 'سابق', DoctorAppointmentFilter.completed => 'مكتمل', DoctorAppointmentFilter.cancelled => 'ملغي' };
   Color get statusColor => switch (status) { DoctorAppointmentFilter.today => AppColors.primary, DoctorAppointmentFilter.upcoming => AppColors.primary, DoctorAppointmentFilter.previous => AppColors.muted, DoctorAppointmentFilter.completed => AppColors.success, DoctorAppointmentFilter.cancelled => AppColors.muted };
-  DoctorAppointment copyWith({DoctorAppointmentFilter? status, String? date, String? time}) => DoctorAppointment(id: id, organizationId: organizationId, doctorId: doctorId, patientId: patientId, clinicId: clinicId, patientName: patientName, patientInitials: patientInitials, age: age, gender: gender, date: date ?? this.date, time: time ?? this.time, type: type, status: status ?? this.status, notes: notes, avatarColor: avatarColor);
+  DoctorAppointment copyWith({DoctorAppointmentFilter? status, String? date, String? time}) => DoctorAppointment(id: id, organizationId: organizationId, doctorId: doctorId, patientId: patientId, clinicId: clinicId, patientName: patientName, patientInitials: patientInitials, age: age, gender: gender, date: date ?? this.date, time: time ?? this.time, type: type, status: status ?? this.status, notes: notes, avatarColor: avatarColor, serviceId: serviceId, serviceName: serviceName);
 }

@@ -198,6 +198,8 @@ class FirestoreMedicalCaseRepository {
     required String notes,
     required String recommendations,
     required String nextPlan,
+    Map<String, dynamic> caseData = const {},
+    DateTime? nextAppointmentAt,
     String? appointmentId,
   }) async {
     final doctor = await _requireCurrentDoctor(medicalCase.organizationId);
@@ -208,6 +210,9 @@ class FirestoreMedicalCaseRepository {
     }
     if (visitAt.isAfter(DateTime.now())) {
       throw StateError('تاريخ المتابعة السريرية لا يمكن أن يكون مستقبليًا.');
+    }
+    if (nextAppointmentAt != null && nextAppointmentAt.isBefore(visitAt)) {
+      throw StateError('تاريخ الموعد القادم يجب أن يكون بعد تاريخ الزيارة.');
     }
 
     final patient = await FirestorePatientRepository.instance.fetchPatientById(
@@ -264,6 +269,9 @@ class FirestoreMedicalCaseRepository {
       'notes': notes.trim(),
       'recommendations': recommendations.trim(),
       'nextPlan': nextPlan.trim(),
+      'caseData': caseData,
+      if (nextAppointmentAt != null)
+        'nextAppointmentAt': Timestamp.fromDate(nextAppointmentAt),
       'createdAt': FieldValue.serverTimestamp(),
       if (normalizedAppointmentId != null && normalizedAppointmentId.isNotEmpty)
         'appointmentId': normalizedAppointmentId,

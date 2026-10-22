@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:medicare/core/auth/models/medical_note.dart';
+import '../../core/auth/models/medical_catalog_entry.dart';
 
 import '../../core/auth/services/firebase_auth_repository.dart';
 import '../../core/firestore/repositories/firestore_clinic_repository.dart';
@@ -7,6 +8,8 @@ import '../../core/firestore/repositories/firestore_doctor_repository.dart';
 import '../../core/firestore/repositories/firestore_appointment_repository.dart';
 import '../../core/firestore/repositories/firestore_patient_repository.dart';
 import '../../core/firestore/repositories/firestore_organization_repository.dart';
+import '../../core/firestore/repositories/firestore_medical_catalog_repository.dart';
+import '../../core/firestore/repositories/firestore_medical_service_repository.dart';
 import '../../core/firestore/appointment_date_time.dart';
 import '../../core/auth/models/patient.dart';
 import '../../core/theme/app_theme.dart';

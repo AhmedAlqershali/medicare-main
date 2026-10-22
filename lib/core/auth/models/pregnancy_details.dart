@@ -130,5 +130,9 @@ class PregnancyProgress {
   final int days;
   final int calendarMonth;
 
+  bool get isApproachingNinthMonth => calendarMonth == 8;
+
+  bool get isInNinthMonth => calendarMonth >= 9;
+
   int get monthsUntilNinthMonth => (9 - calendarMonth).clamp(0, 8).toInt();
 }

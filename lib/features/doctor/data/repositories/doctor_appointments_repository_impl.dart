@@ -113,6 +113,8 @@ class DoctorAppointmentsRepositoryImpl
       ),
       notes: _asString(appointment['notes']),
       avatarColor: Colors.transparent,
+      serviceId: appointment['serviceId'] as String?,
+      serviceName: _asString(appointment['serviceName']),
     );
   }
 

@@ -75,6 +75,7 @@ async function seedFixtures() {
       'organizations/org-a/doctors/doctor-a': {
         id: 'doctor-a', organizationId: 'org-a', status: 'active',
         firebaseUid: identities.doctor.uid, clinicId: 'clinic-a',
+        serviceIds: ['service-glasses'],
       },
       'organizations/org-a/doctors/doctor-b': {
         id: 'doctor-b', organizationId: 'org-a', status: 'active',
@@ -127,6 +128,11 @@ async function seedFixtures() {
         patientId: 'patient-a', doctorId: 'doctor-a',
       },
       'admins/admin-a-uid': { role: 'admin', active: true },
+      'medical_catalog/service-glasses': {
+        id: 'service-glasses', kind: 'service', nameAr: 'خدمة النظارات',
+        nameEn: '', specialtyIds: [], repeatIntervalMonths: 12,
+        active: true, archived: false,
+      },
     };
 
     for (const identity of Object.values(identities)) {
@@ -284,6 +290,28 @@ async function seedPregnancyCase() {
       doctorId: 'doctor-a',
       clinicId: 'clinic-a',
     });
+    await setDoc(doc(db, 'organizations/org-a/appointments/appointment-a'), {
+      id: 'appointment-a',
+      organizationId: 'org-a',
+      patientId: 'patient-a',
+      doctorId: 'doctor-a',
+      clinicId: 'clinic-a',
+      status: 'completed',
+      date: Timestamp.fromDate(new Date('2026-10-20T00:00:00.000Z')),
+      time: '10:00',
+    });
+    await setDoc(doc(db, 'organizations/org-a/appointments/service-appointment-a'), {
+      id: 'service-appointment-a',
+      organizationId: 'org-a',
+      patientId: 'patient-a',
+      doctorId: 'doctor-a',
+      clinicId: 'clinic-a',
+      serviceId: 'service-glasses',
+      serviceName: 'خدمة النظارات',
+      status: 'upcoming',
+      date: Timestamp.fromDate(new Date('2026-10-20T00:00:00.000Z')),
+      time: '10:00',
+    });
   });
   return casePath;
 }
@@ -339,4 +367,132 @@ test('medical cases and clinical follow-ups cannot be deleted', async () => {
 
   await assertFails(deleteDoc(doc(doctorDb, casePath)));
   await assertFails(deleteDoc(doc(doctorDb, `${casePath}/follow_ups/follow-up-a`)));
+});
+
+test('follow-ups are append-only and restricted to the assigned doctor and patient', async () => {
+  const casePath = await seedPregnancyCase();
+  const doctorDb = context(identities.doctor);
+  const otherDoctorDb = context(identities.otherDoctor);
+  const patientDb = context(identities.patient);
+  const followUpPath = `${casePath}/follow_ups/follow-up-new`;
+  const data = {
+    id: 'follow-up-new',
+    caseId: 'case-a',
+    patientId: 'patient-a',
+    organizationId: 'org-a',
+    doctorId: 'doctor-a',
+    clinicId: 'clinic-a',
+    visitAt: Timestamp.fromDate(new Date('2026-10-20T00:00:00.000Z')),
+    assessment: 'Follow-up assessment',
+    notes: 'Medical notes',
+    recommendations: '',
+    nextPlan: 'Continue follow-up',
+    caseData: { gestationalAge: '40 weeks', bloodPressure: '120/80' },
+    nextAppointmentAt: Timestamp.fromDate(new Date('2026-10-27T00:00:00.000Z')),
+    createdAt: serverTimestamp(),
+  };
+
+  await assertFails(setDoc(doc(otherDoctorDb, followUpPath), data));
+  await assertFails(setDoc(doc(patientDb, followUpPath), data));
+  await assertSucceeds(setDoc(doc(doctorDb, followUpPath), data));
+  await assertSucceeds(setDoc(doc(doctorDb, `${casePath}/follow_ups/follow-up-linked`), {
+    ...data,
+    id: 'follow-up-linked',
+    appointmentId: 'appointment-a',
+  }));
+  await assertFails(setDoc(doc(doctorDb, `${casePath}/follow_ups/follow-up-mismatch`), {
+    ...data,
+    id: 'follow-up-mismatch',
+    appointmentId: 'appointment-a',
+    visitAt: Timestamp.fromDate(new Date('2026-10-21T00:00:00.000Z')),
+  }));
+  await assertFails(updateDoc(doc(doctorDb, followUpPath), { notes: 'Changed' }));
+  await assertFails(deleteDoc(doc(doctorDb, followUpPath)));
+});
+
+test('medical service usage and history are append-only and cannot be written by clients', async () => {
+  const doctorDb = context(identities.doctor);
+  const patientDb = context(identities.patient);
+  const usagePath = 'organizations/org-a/patients/patient-a/medical_service_usage/service-glasses';
+  const historyPath = 'organizations/org-a/patients/patient-a/medical_service_history/record-a';
+
+  await assertFails(setDoc(doc(doctorDb, usagePath), { lastServiceAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(doctorDb, historyPath), { serviceId: 'service-glasses' }));
+  await assertFails(deleteDoc(doc(doctorDb, historyPath)));
+  await assertFails(setDoc(doc(patientDb, historyPath), { serviceId: 'service-glasses' }));
+});
+
+test('service-linked appointments cannot be completed directly by clients', async () => {
+  await seedPregnancyCase();
+  const doctorDb = context(identities.doctor);
+
+  await assertFails(updateDoc(
+    doc(doctorDb, 'organizations/org-a/appointments/service-appointment-a'),
+    { status: 'completed', updatedAt: serverTimestamp() },
+  ));
+});
+
+test('service-linked appointments require an active service assigned to their doctor', async () => {
+  const doctorDb = context(identities.doctor);
+  const appointmentPath = 'organizations/org-a/appointments/new-service-appointment';
+  const validAppointment = {
+    id: 'new-service-appointment',
+    organizationId: 'org-a',
+    patientId: 'patient-a',
+    doctorId: 'doctor-a',
+    clinicId: 'clinic-a',
+    date: Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000)),
+    time: '10:00',
+    type: 'زيارة في العيادة',
+    status: 'upcoming',
+    notes: '',
+    serviceId: 'service-glasses',
+    serviceName: 'خدمة النظارات',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  await assertSucceeds(setDoc(doc(doctorDb, appointmentPath), validAppointment));
+  await assertFails(setDoc(doc(doctorDb, 'organizations/org-a/appointments/unassigned-service'), {
+    ...validAppointment,
+    id: 'unassigned-service',
+    serviceId: 'unknown-service',
+  }));
+});
+
+test('service usage visibility remains limited to the patient access scope', async () => {
+  const doctorDb = context(identities.doctor);
+  const otherDoctorDb = context(identities.otherDoctor);
+  const usagePath = 'organizations/org-a/patients/patient-a/medical_service_usage/service-glasses';
+
+  await testEnvironment.withSecurityRulesDisabled(async (adminContext) => {
+    await setDoc(doc(adminContext.firestore(), usagePath), {
+      organizationId: 'org-a',
+      patientId: 'patient-a',
+      serviceId: 'service-glasses',
+      lastServiceAt: Timestamp.fromDate(new Date('2026-01-01T00:00:00.000Z')),
+    });
+  });
+  await assertSucceeds(getDoc(doc(doctorDb, usagePath)));
+  await assertFails(getDoc(doc(otherDoctorDb, usagePath)));
+});
+
+test('only organization owners and admins can grant a repeat override permission', async () => {
+  const ownerDb = context(identities.owner);
+  const doctorDb = context(identities.doctor);
+  const permissionPath = 'organizations/org-a/medical_service_override_permissions/doctor-a';
+  const permission = {
+    doctorId: 'doctor-a',
+    permission: 'service_repeat_override',
+    active: true,
+    changedBy: identities.owner.uid,
+    updatedAt: serverTimestamp(),
+  };
+
+  await assertSucceeds(setDoc(doc(ownerDb, permissionPath), permission));
+  await assertFails(setDoc(doc(doctorDb, permissionPath), {
+    ...permission,
+    changedBy: identities.doctor.uid,
+  }));
+  await assertFails(deleteDoc(doc(ownerDb, permissionPath)));
 });

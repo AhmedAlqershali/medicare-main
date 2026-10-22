@@ -6,6 +6,7 @@ import '../firestore_service.dart';
 import '../../auth/models/account_role.dart';
 import '../../auth/services/firebase_auth_repository.dart';
 import 'firestore_doctor_repository.dart';
+import 'firestore_medical_service_repository.dart';
 import 'firestore_user_profile_repository.dart';
 
 class FirestoreAppointmentRepository {
@@ -229,6 +230,15 @@ class FirestoreAppointmentRepository {
       );
     }
 
+    if (appointment['status'] == 'completed') {
+      await FirestoreMedicalServiceRepository.instance.completeAppointment(
+        organizationId: organizationId,
+        appointmentId: appointmentId,
+        overrideReason: appointment['serviceRepeatOverrideReason'] as String?,
+      );
+      return;
+    }
+
     final safeAppointment = <String, dynamic>{
       ...appointment,
       'id': appointmentId,
@@ -260,22 +270,6 @@ class FirestoreAppointmentRepository {
       safeAppointment['status'] = 'upcoming';
     }
 
-    if (safeAppointment['status'] == 'completed') {
-      final current = await _service
-          .appointmentDocument(organizationId, appointmentId)
-          .get();
-      final currentData = current.data();
-      final scheduledAt = parseAppointmentDateTime(
-        currentData?['date'],
-        currentData?['time'],
-      );
-      if (currentData?['date'] is! Timestamp ||
-          scheduledAt == null ||
-          scheduledAt.isAfter(DateTime.now())) {
-        throw StateError('لا يمكن إكمال موعد لم يحن وقته أو لم يتم التحقق من وقته.');
-      }
-    }
-
     await _service
         .appointmentDocument(
       organizationId,
@@ -302,27 +296,18 @@ class FirestoreAppointmentRepository {
       );
     }
 
+    if (normalizedStatus == 'completed') {
+      await FirestoreMedicalServiceRepository.instance.completeAppointment(
+        organizationId: organizationId,
+        appointmentId: appointmentId,
+      );
+      return;
+    }
+
     if (appointmentId.trim().isEmpty) {
       throw StateError(
         'معرّف الموعد مطلوب.',
       );
-    }
-
-    if (normalizedStatus == 'completed') {
-      final appointment = await fetchAppointmentById(
-        organizationId,
-        appointmentId,
-      );
-      final scheduledAt = parseAppointmentDateTime(
-        appointment?['date'],
-        appointment?['time'],
-      );
-      if (appointment == null ||
-          appointment['date'] is! Timestamp ||
-          scheduledAt == null ||
-          scheduledAt.isAfter(DateTime.now())) {
-        throw StateError('لا يمكن إكمال موعد لم يحن وقته أو لم يتم التحقق من وقته.');
-      }
     }
 
     await _service

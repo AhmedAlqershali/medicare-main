@@ -18,6 +18,7 @@ class _DoctorPatientDetailsScreenState
   String _clinicName = '';
 
   Map<String, List<String>> _availability = const {};
+  List<MedicalCatalogEntry> _doctorServices = const [];
   List<MedicalNote> _medicalNotes = const [];
   List<Map<String, dynamic>> _patientAppointments = const [];
 
@@ -50,6 +51,18 @@ class _DoctorPatientDetailsScreenState
         _patient.organizationId,
         _patient.doctorId,
       );
+      var doctorServices = <MedicalCatalogEntry>[];
+      if (doctor?.serviceIds.isNotEmpty == true) {
+        try {
+          final services = await FirestoreMedicalCatalogRepository.instance
+              .fetchEntries(kind: MedicalCatalogKind.service);
+          doctorServices = services
+              .where((service) => doctor!.serviceIds.contains(service.id))
+              .toList();
+        } catch (_) {
+          // Appointment scheduling remains available without the optional catalog.
+        }
+      }
 
       final patientClinicId = _patient.clinicId?.trim();
 
@@ -131,6 +144,7 @@ class _DoctorPatientDetailsScreenState
             : organizationName;
 
         _availability = doctor?.availability ?? const {};
+        _doctorServices = doctorServices;
         _medicalNotes = medicalNotes;
         _loadingNotes = false;
         _patientAppointments = patientAppointments;
@@ -225,8 +239,14 @@ class _DoctorPatientDetailsScreenState
 
       var selectedDay = availableDays.first.key;
       var selectedTime = availableDays.first.value.first;
+        var selectedServiceId = '';
+        var usageMessage = 'اختيار الخدمة اختياري.';
+        String displayDate(DateTime date) =>
+          '${date.day.toString().padLeft(2, '0')}/'
+          '${date.month.toString().padLeft(2, '0')}/'
+          '${date.year}';
 
-      final selection = await showDialog<Map<String, String>>(
+        final selection = await showDialog<Map<String, Object?>>(
         context: context,
         builder: (dialogContext) => StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
@@ -234,6 +254,54 @@ class _DoctorPatientDetailsScreenState
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (_doctorServices.isNotEmpty) ...[
+                  DropdownButtonFormField<String>(
+                    value: selectedServiceId,
+                    decoration: const InputDecoration(labelText: 'الخدمة الطبية (اختياري)'),
+                    items: [
+                      const DropdownMenuItem(value: '', child: Text('موعد عام')),
+                      ..._doctorServices.map((service) => DropdownMenuItem(
+                            value: service.id,
+                            child: Text(service.displayName),
+                          )),
+                    ],
+                    onChanged: (value) async {
+                      selectedServiceId = value ?? '';
+                      setDialogState(() {
+                        usageMessage = 'جارٍ تحميل سجل الخدمة...';
+                      });
+                      if (selectedServiceId.isEmpty) {
+                        setDialogState(() => usageMessage = 'اختيار الخدمة اختياري.');
+                        return;
+                      }
+                      try {
+                        final usage = await FirestoreMedicalServiceRepository.instance.fetchUsage(
+                          organizationId: _patient.organizationId,
+                          patientId: _patient.id,
+                          serviceId: selectedServiceId,
+                        );
+                        if (!dialogContext.mounted) return;
+                        setDialogState(() {
+                          usageMessage = usage.lastServiceAt == null
+                              ? 'لا يوجد سجل سابق لهذه الخدمة.'
+                              : 'آخر خدمة: ${displayDate(usage.lastServiceAt!)}'
+                                  '${usage.nextEligibleAt == null ? '' : ' • الاستحقاق: ${displayDate(usage.nextEligibleAt!)}'}';
+                        });
+                      } catch (error) {
+                        if (dialogContext.mounted) {
+                          setDialogState(() => usageMessage = 'تعذر قراءة استحقاق الخدمة: $error');
+                        }
+                      }
+                    },
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.xs),
+                      child: Text(usageMessage, style: Theme.of(context).textTheme.bodySmall),
+                    ),
+                  ),
+                ],
                 DropdownButtonFormField<String>(
                   value: selectedDay,
                   decoration: const InputDecoration(
@@ -290,9 +358,16 @@ class _DoctorPatientDetailsScreenState
               ),
               FilledButton(
                 onPressed: () {
-                  Navigator.of(dialogContext).pop({
+                  Navigator.of(dialogContext).pop(<String, Object?>{
                     'date': selectedDay,
                     'time': selectedTime,
+                    'serviceId': selectedServiceId.isEmpty ? null : selectedServiceId,
+                    'serviceName': selectedServiceId.isEmpty
+                        ? null
+                        : _doctorServices
+                            .where((service) => service.id == selectedServiceId)
+                            .firstOrNull
+                            ?.displayName,
                   });
                 },
                 child: const Text('متابعة'),
@@ -371,6 +446,37 @@ class _DoctorPatientDetailsScreenState
         'time': selection['time'],
       });
 
+      final serviceId = selection['serviceId'] as String?;
+      if (serviceId != null) {
+        final usage = await FirestoreMedicalServiceRepository.instance.fetchUsage(
+          organizationId: _patient.organizationId,
+          patientId: _patient.id,
+          serviceId: serviceId,
+        );
+        if (usage.nextEligibleAt != null &&
+            selectedDateTime != null &&
+            selectedDateTime.isBefore(usage.nextEligibleAt!)) {
+          final hasOverride = await FirestoreMedicalServiceRepository.instance
+              .hasRepeatOverridePermission(
+            organizationId: _patient.organizationId,
+            doctorId: _patient.doctorId,
+          );
+          if (!hasOverride) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('الخدمة تستحق في ${displayDate(usage.nextEligibleAt!)}.'),
+              ),
+            );
+            return;
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('سيُطلب سبب طبي عند إكمال الخدمة قبل ${displayDate(usage.nextEligibleAt!)}.'),
+            ),
+          );
+        }
+      }
+
       if (selectedDateTime == null ||
           !selectedDateTime.isAfter(DateTime.now())) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -406,6 +512,8 @@ class _DoctorPatientDetailsScreenState
         'date': selection['date'],
         'time': selection['time'],
         'type': 'زيارة في العيادة',
+        if (selection['serviceId'] != null) 'serviceId': selection['serviceId'],
+        if (selection['serviceName'] != null) 'serviceName': selection['serviceName'],
         'status': 'upcoming',
         'patientName': _patient.name,
         'patientInitials': _patient.initials,

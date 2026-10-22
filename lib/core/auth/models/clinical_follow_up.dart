@@ -15,6 +15,8 @@ class ClinicalFollowUp {
     required this.nextPlan,
     required this.createdAt,
     this.appointmentId,
+    this.caseData = const {},
+    this.nextAppointmentAt,
   });
 
   final String id;
@@ -30,6 +32,8 @@ class ClinicalFollowUp {
   final String nextPlan;
   final DateTime createdAt;
   final String? appointmentId;
+  final Map<String, dynamic> caseData;
+  final DateTime? nextAppointmentAt;
 
   factory ClinicalFollowUp.fromMap(String id, Map<String, dynamic> map) =>
       ClinicalFollowUp(
@@ -46,6 +50,12 @@ class ClinicalFollowUp {
         nextPlan: map['nextPlan'] as String? ?? '',
         createdAt: _date(map['createdAt']),
         appointmentId: map['appointmentId'] as String?,
+        caseData: map['caseData'] is Map
+          ? Map<String, dynamic>.from(map['caseData'] as Map)
+          : const {},
+        nextAppointmentAt: map['nextAppointmentAt'] == null
+          ? null
+          : _date(map['nextAppointmentAt']),
       );
 
   static DateTime _date(Object? value) {

@@ -54,6 +54,8 @@ class FirestoreMedicalCatalogRepository {
       'nameAr': entry.nameAr.trim(),
       'nameEn': entry.nameEn.trim(),
       'specialtyIds': entry.specialtyIds,
+      if (entry.kind == MedicalCatalogKind.service)
+        'repeatIntervalMonths': entry.repeatIntervalMonths ?? 0,
       'active': entry.archived ? false : entry.active,
       'archived': entry.archived,
       'parentId': entry.parentId,

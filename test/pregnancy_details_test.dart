@@ -15,9 +15,28 @@ void main() {
     final ninthMonth = pregnancy.progressAt(DateTime.utc(2026, 9, 15));
 
     expect(eighthMonth.calendarMonth, 8);
+    expect(eighthMonth.isApproachingNinthMonth, isTrue);
+    expect(eighthMonth.isInNinthMonth, isFalse);
     expect(eighthMonth.monthsUntilNinthMonth, 1);
     expect(ninthMonth.calendarMonth, 9);
+    expect(ninthMonth.isApproachingNinthMonth, isFalse);
+    expect(ninthMonth.isInNinthMonth, isTrue);
     expect(ninthMonth.monthsUntilNinthMonth, 0);
+    expect(pregnancy.expectedDueDate, DateTime.utc(2026, 10, 22));
+  });
+
+  test('gestational age rolls forward by calendar day and week', () {
+    final pregnancy = PregnancyDetails.fromReference(
+      datingMethod: PregnancyDatingMethod.gestationalAgeAtReference,
+      referenceDate: DateTime.utc(2026, 10, 21),
+      gestationalWeeks: 7,
+      gestationalDays: 6,
+    );
+
+    final progress = pregnancy.progressAt(DateTime.utc(2026, 10, 22));
+
+    expect(progress.weeks, 8);
+    expect(progress.days, 0);
   });
 
   test('Firestore date-only timestamps retain their UTC calendar day', () {
