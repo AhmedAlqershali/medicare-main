@@ -15,8 +15,10 @@ class _HomeContentState extends State<_HomeContent> {
   List<DoctorEntity> _doctors = const [];
   List<ClinicEntity> _clinics = const [];
   List<AppointmentEntity> _appointments = const [];
+  List<MedicalCase> _medicalCases = const [];
 
   String? _error;
+  String? _caseError;
   bool _loading = true;
 
   @override
@@ -57,6 +59,17 @@ class _HomeContentState extends State<_HomeContent> {
         );
       }
 
+      List<MedicalCase> medicalCases = const [];
+      String? caseError;
+      try {
+        medicalCases = await FirestoreMedicalCaseRepository.instance.fetchCases(
+          organizationId: organizationId,
+          patientId: patientId,
+        );
+      } catch (error) {
+        caseError = error.toString();
+      }
+
       final patientClinicId = patient.clinicId;
 
       if (patientClinicId == null || patientClinicId.isEmpty) {
@@ -90,6 +103,8 @@ class _HomeContentState extends State<_HomeContent> {
         _doctors = clinicDoctors;
         _clinics = allClinics;
         _appointments = appointments;
+        _medicalCases = medicalCases;
+        _caseError = caseError;
         _loading = false;
       });
     } catch (error) {
@@ -218,6 +233,44 @@ class _HomeContentState extends State<_HomeContent> {
                 },
               ),
 
+              const SizedBox(height: AppSpacing.xl),
+              SectionHeader(
+                title: 'الحالات الطبية',
+                actionLabel: 'عرض الكل',
+                onAction: () => _openMedicalCases(
+                  organizationId: organizationId,
+                  patientId: patientId,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              if (_caseError != null)
+                Text('تعذر تحميل الحالات الطبية: $_caseError')
+              else if (_medicalCases.isEmpty)
+                const Text('لا توجد حالات طبية مسجلة.')
+              else
+                for (final medicalCase in _medicalCases.take(3))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                    child: AppCard(
+                      padding: EdgeInsets.zero,
+                      child: ListTile(
+                        leading: const Icon(
+                          Icons.medical_information_outlined,
+                          color: AppColors.primary,
+                        ),
+                        title: Text(medicalCase.title),
+                        subtitle: Text(
+                          '${medicalCase.type} • ${_caseStatusLabel(medicalCase.status)}',
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => _openMedicalCases(
+                          organizationId: organizationId,
+                          patientId: patientId,
+                        ),
+                      ),
+                    ),
+                  ),
+
               const SizedBox(
                 height: AppSpacing.xl,
               ),
@@ -285,4 +338,30 @@ class _HomeContentState extends State<_HomeContent> {
       ),
     ],
   );
+
+  Future<void> _openMedicalCases({
+    required String organizationId,
+    required String patientId,
+  }) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => MedicalCasesScreen(
+          organizationId: organizationId,
+          patientId: patientId,
+          patientName:
+              FirebaseAuthRepository.instance.session.currentUser?.name ??
+                  'المريض',
+          allowClinicalWrites: false,
+        ),
+      ),
+    );
+  }
+
+  String _caseStatusLabel(String status) => switch (status) {
+        'active' => 'نشطة',
+        'monitoring' => 'قيد المتابعة',
+        'completed' => 'مكتملة',
+        'archived' => 'مؤرشفة',
+        _ => 'غير محددة',
+      };
 }

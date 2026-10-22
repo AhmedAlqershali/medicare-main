@@ -796,6 +796,28 @@ class _DoctorPatientDetailsScreenState
               ),
             ),
             const SizedBox(height: AppSpacing.xl),
+            const SectionHeader(title: 'الحالات الطبية'),
+            const SizedBox(height: AppSpacing.sm),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  await Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => MedicalCasesScreen(
+                        organizationId: _patient.organizationId,
+                        patientId: _patient.id,
+                        patientName: _patient.name,
+                        allowClinicalWrites: true,
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.medical_information_outlined),
+                label: const Text('عرض الحالات وإدارتها'),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xl),
             if (_referenceError != null) ...[
               Text(
                 'تعذر تحميل بعض بيانات الملف: $_referenceError',

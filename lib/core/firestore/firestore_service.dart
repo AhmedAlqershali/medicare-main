@@ -31,6 +31,12 @@ class FirestoreService {
 
   CollectionReference<Map<String, dynamic>> medicalNotesCollection(String organizationId, String patientId) => patientDocumentForOrganization(organizationId, patientId).collection('medical_notes');
 
+  CollectionReference<Map<String, dynamic>> medicalCaseCollection(String organizationId, String patientId) => patientDocumentForOrganization(organizationId, patientId).collection('medical_cases');
+
+  DocumentReference<Map<String, dynamic>> medicalCaseDocument(String organizationId, String patientId, String caseId) => medicalCaseCollection(organizationId, patientId).doc(_documentId(caseId, 'caseId'));
+
+  CollectionReference<Map<String, dynamic>> clinicalFollowUpCollection(String organizationId, String patientId, String caseId) => medicalCaseDocument(organizationId, patientId, caseId).collection('follow_ups');
+
   CollectionReference<Map<String, dynamic>> clinicCollection(String organizationId) => _firestore.collection('organizations').doc(_organizationId(organizationId)).collection('clinics');
 
   CollectionReference<Map<String, dynamic>> appointmentCollection(String organizationId) => _firestore.collection('organizations').doc(_organizationId(organizationId)).collection('appointments');

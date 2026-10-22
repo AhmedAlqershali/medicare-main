@@ -13,6 +13,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/medicare_widgets.dart';
 import 'add_patient_screen.dart';
 import 'models/doctor_patient.dart';
+import 'medical_cases_screen.dart';
 
 part 'doctor_patients_screen_doctor_patients_screen_state.dart';
 part 'doctor_patients_screen_patient_card.dart';

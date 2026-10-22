@@ -754,6 +754,175 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    match /organizations/{organizationId}/patients/{patientId}/medical_cases/{caseId} {
+      allow read: if signedIn() && (
+        isAdmin()
+        || ownsOrganization(organizationId)
+        || organizationUserForPatient(organizationId, patientId)
+        || isDoctorPatientAccess(organizationId, resource.data.doctorId, patientId)
+        || isCurrentPatientAccess(organizationId, patientId)
+      );
+
+      allow create: if signedIn()
+        && currentUserProfile() != null
+        && currentUserProfile().data.role == 'doctor'
+        && currentUserProfile().data.organizationId == organizationId
+        && currentUserProfile().data.get('doctorId', null) is string
+        && isDoctorPatientAccess(
+          organizationId,
+          currentUserProfile().data.doctorId,
+          patientId
+        )
+        && request.resource.data.id == caseId
+        && request.resource.data.patientId == patientId
+        && request.resource.data.organizationId == organizationId
+        && request.resource.data.doctorId == currentUserProfile().data.doctorId
+        && request.resource.data.clinicId is string
+        && (
+          request.resource.data.clinicId == patientDocument(organizationId, patientId).data.get('clinicId', null)
+          || (
+            patientDocument(organizationId, patientId).data.get('clinicId', null) == null
+            && request.resource.data.clinicId == get(/databases/$(database)/documents/organizations/$(organizationId)/doctors/$(currentUserProfile().data.doctorId)).data.get('clinicId', null)
+          )
+        )
+        && clinicBelongsToOrganization(organizationId, request.resource.data.clinicId)
+        && get(/databases/$(database)/documents/organizations/$(organizationId)/doctors/$(currentUserProfile().data.doctorId)).data.get('clinicId', null) == request.resource.data.clinicId
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.type is string
+        && request.resource.data.type.size() > 0
+        && request.resource.data.status == 'active'
+        && request.resource.data.startedAt is timestamp
+        && request.resource.data.startedAt <= request.time
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.diagnosis is string
+        && request.resource.data.assessment is string
+        && request.resource.data.notes is string
+        && request.resource.data.treatmentPlan is string
+        && request.resource.data.keys().hasOnly([
+          'id', 'patientId', 'organizationId', 'doctorId', 'clinicId',
+          'title', 'type', 'startedAt', 'diagnosis', 'assessment', 'notes',
+          'treatmentPlan', 'status', 'createdAt'
+        ]);
+
+      allow update: if signedIn()
+        && currentUserProfile() != null
+        && currentUserProfile().data.role == 'doctor'
+        && currentUserProfile().data.organizationId == organizationId
+        && currentUserProfile().data.doctorId == resource.data.doctorId
+        && isDoctorPatientAccess(organizationId, resource.data.doctorId, patientId)
+        && get(/databases/$(database)/documents/organizations/$(organizationId)/doctors/$(resource.data.doctorId)).data.get('clinicId', null) == resource.data.clinicId
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.patientId == resource.data.patientId
+        && request.resource.data.organizationId == resource.data.organizationId
+        && request.resource.data.doctorId == resource.data.doctorId
+        && request.resource.data.clinicId == resource.data.clinicId
+        && request.resource.data.title == resource.data.title
+        && request.resource.data.type == resource.data.type
+        && request.resource.data.startedAt == resource.data.startedAt
+        && request.resource.data.diagnosis == resource.data.diagnosis
+        && request.resource.data.assessment == resource.data.assessment
+        && request.resource.data.notes == resource.data.notes
+        && request.resource.data.treatmentPlan == resource.data.treatmentPlan
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'completedAt', 'archivedAt', 'updatedAt'
+        ])
+        && (
+          (
+            resource.data.status in ['active', 'monitoring']
+            && request.resource.data.status == 'monitoring'
+            && request.resource.data.updatedAt == request.time
+            && request.resource.data.get('completedAt', null) == resource.data.get('completedAt', null)
+            && request.resource.data.get('archivedAt', null) == resource.data.get('archivedAt', null)
+          )
+          || (
+            resource.data.status in ['active', 'monitoring']
+            && request.resource.data.status == 'completed'
+            && request.resource.data.completedAt == request.time
+            && request.resource.data.updatedAt == request.time
+            && request.resource.data.get('archivedAt', null) == resource.data.get('archivedAt', null)
+          )
+          || (
+            resource.data.status in ['active', 'monitoring', 'completed']
+            && request.resource.data.status == 'archived'
+            && request.resource.data.archivedAt == request.time
+            && request.resource.data.updatedAt == request.time
+            && request.resource.data.get('completedAt', null) == resource.data.get('completedAt', null)
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    match /organizations/{organizationId}/patients/{patientId}/medical_cases/{caseId}/follow_ups/{followUpId} {
+      allow read: if signedIn()
+        && exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/medical_cases/$(caseId))
+        && (
+          isAdmin()
+          || ownsOrganization(organizationId)
+          || organizationUserForPatient(organizationId, patientId)
+          || isDoctorPatientAccess(
+            organizationId,
+            get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/medical_cases/$(caseId)).data.doctorId,
+            patientId
+          )
+          || isCurrentPatientAccess(organizationId, patientId)
+        );
+
+      allow create: if signedIn()
+        && currentUserProfile() != null
+        && currentUserProfile().data.role == 'doctor'
+        && currentUserProfile().data.organizationId == organizationId
+        && currentUserProfile().data.doctorId == request.resource.data.doctorId
+        && isDoctorPatientAccess(organizationId, request.resource.data.doctorId, patientId)
+        && exists(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/medical_cases/$(caseId))
+        && get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/medical_cases/$(caseId)).data.status in ['active', 'monitoring']
+        && get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/medical_cases/$(caseId)).data.doctorId == request.resource.data.doctorId
+        && get(/databases/$(database)/documents/organizations/$(organizationId)/patients/$(patientId)/medical_cases/$(caseId)).data.clinicId == request.resource.data.clinicId
+        && request.resource.data.clinicId is string
+        && clinicBelongsToOrganization(organizationId, request.resource.data.clinicId)
+        && get(/databases/$(database)/documents/organizations/$(organizationId)/doctors/$(request.resource.data.doctorId)).data.get('clinicId', null) == request.resource.data.clinicId
+        && request.resource.data.id == followUpId
+        && request.resource.data.caseId == caseId
+        && request.resource.data.patientId == patientId
+        && request.resource.data.organizationId == organizationId
+        && (
+          request.resource.data.clinicId == patientDocument(organizationId, patientId).data.get('clinicId', null)
+          || (
+            patientDocument(organizationId, patientId).data.get('clinicId', null) == null
+            && request.resource.data.clinicId == get(/databases/$(database)/documents/organizations/$(organizationId)/doctors/$(request.resource.data.doctorId)).data.get('clinicId', null)
+          )
+        )
+        && request.resource.data.visitAt <= request.time
+        && request.resource.data.visitAt is timestamp
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.assessment is string
+        && request.resource.data.notes is string
+        && request.resource.data.recommendations is string
+        && request.resource.data.nextPlan is string
+        && request.resource.data.keys().hasOnly([
+          'id', 'caseId', 'patientId', 'organizationId', 'doctorId', 'clinicId',
+          'visitAt', 'assessment', 'notes', 'recommendations', 'nextPlan',
+          'createdAt', 'appointmentId'
+        ])
+        && (
+          !request.resource.data.keys().hasAny(['appointmentId'])
+          || (
+            request.resource.data.appointmentId is string
+            && request.resource.data.appointmentId.size() > 0
+            && exists(/databases/$(database)/documents/organizations/$(organizationId)/appointments/$(request.resource.data.appointmentId))
+            && get(/databases/$(database)/documents/organizations/$(organizationId)/appointments/$(request.resource.data.appointmentId)).data.status == 'completed'
+            && get(/databases/$(database)/documents/organizations/$(organizationId)/appointments/$(request.resource.data.appointmentId)).data.organizationId == organizationId
+            && get(/databases/$(database)/documents/organizations/$(organizationId)/appointments/$(request.resource.data.appointmentId)).data.patientId == patientId
+            && get(/databases/$(database)/documents/organizations/$(organizationId)/appointments/$(request.resource.data.appointmentId)).data.doctorId == request.resource.data.doctorId
+            && get(/databases/$(database)/documents/organizations/$(organizationId)/appointments/$(request.resource.data.appointmentId)).data.clinicId == request.resource.data.clinicId
+          )
+        );
+
+      allow update, delete: if false;
+    }
+
     // ============================================================
     // CLINICS
     // ============================================================
