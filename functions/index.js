@@ -52,7 +52,7 @@ async function archiveIfDue(reference, now) {
 
     const data = snapshot.data();
     if (data.type !== 'pregnancy' ||
-        !['active', 'monitoring'].includes(data.status)) {
+        !['active', 'monitoring', 'completed'].includes(data.status)) {
       return false;
     }
 
@@ -61,7 +61,7 @@ async function archiveIfDue(reference, now) {
 
     transaction.update(reference, {
       status: 'archived',
-      completedAt: FieldValue.serverTimestamp(),
+      completedAt: data.completedAt ?? FieldValue.serverTimestamp(),
       archivedAt: FieldValue.serverTimestamp(),
       archiveReason: 'pregnancy_period_elapsed',
       updatedAt: FieldValue.serverTimestamp(),

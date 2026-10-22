@@ -1,7 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../appointment_date_time.dart';
 import '../firestore_service.dart';
+import '../../auth/models/account_role.dart';
+import '../../auth/services/firebase_auth_repository.dart';
+import 'firestore_doctor_repository.dart';
 import 'firestore_user_profile_repository.dart';
 
 class FirestoreAppointmentRepository {
@@ -123,6 +127,19 @@ class FirestoreAppointmentRepository {
     required String organizationId,
     required String doctorId,
   }) async {
+    final session = FirebaseAuthRepository.instance.session;
+    if (session.currentRole != AccountRole.doctor ||
+        session.organizationId != organizationId ||
+        session.doctorId != doctorId) {
+      return const [];
+    }
+    final doctor = await FirestoreDoctorRepository.instance
+        .fetchDoctorByIdForOrganization(organizationId, doctorId);
+    final clinicId = doctor?.clinicId;
+    if (doctor == null || clinicId == null || clinicId.trim().isEmpty) {
+      return const [];
+    }
+
     final snapshot = await _service
         .appointmentCollection(organizationId)
         .where(
@@ -133,6 +150,10 @@ class FirestoreAppointmentRepository {
       'doctorId',
       isEqualTo: doctorId,
     )
+        .where(
+      'clinicId',
+      whereIn: [clinicId, null],
+    )
         .get();
 
     return snapshot.docs
@@ -142,6 +163,9 @@ class FirestoreAppointmentRepository {
         'id': document.id,
       },
     )
+        .where((appointment) =>
+          appointment['clinicId'] == null ||
+          appointment['clinicId'] == clinicId)
         .toList();
   }
 
@@ -158,6 +182,14 @@ class FirestoreAppointmentRepository {
       );
     }
 
+    final scheduledAt = parseAppointmentDateTime(
+      appointment['date'],
+      appointment['time'],
+    );
+    if (scheduledAt == null || !scheduledAt.isAfter(DateTime.now())) {
+      throw StateError('يجب أن يكون الموعد بتاريخ ووقت قادمين.');
+    }
+
     final reference =
     _service.appointmentCollection(organizationId).doc();
 
@@ -165,6 +197,7 @@ class FirestoreAppointmentRepository {
       ...appointment,
       'id': reference.id,
       'organizationId': organizationId,
+      'date': Timestamp.fromDate(scheduledAt),
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
@@ -203,6 +236,46 @@ class FirestoreAppointmentRepository {
       'updatedAt': FieldValue.serverTimestamp(),
     };
 
+    if (appointment.containsKey('date') || appointment.containsKey('time')) {
+      final reference = _service.appointmentDocument(
+        organizationId,
+        appointmentId,
+      );
+      final current = await reference.get();
+      final currentData = current.data();
+      if (!current.exists || currentData == null) {
+        throw StateError('لم يتم العثور على الموعد المطلوب لإعادة جدولته.');
+      }
+
+      final scheduledAt = parseAppointmentDateTime(
+        appointment['date'] ?? currentData['date'],
+        appointment['time'] ?? currentData['time'],
+      );
+      if (scheduledAt == null || !scheduledAt.isAfter(DateTime.now())) {
+        throw StateError('يجب أن يكون الموعد المعاد جدولته في المستقبل.');
+      }
+
+      safeAppointment['date'] = Timestamp.fromDate(scheduledAt);
+      safeAppointment['time'] = appointment['time'] ?? currentData['time'];
+      safeAppointment['status'] = 'upcoming';
+    }
+
+    if (safeAppointment['status'] == 'completed') {
+      final current = await _service
+          .appointmentDocument(organizationId, appointmentId)
+          .get();
+      final currentData = current.data();
+      final scheduledAt = parseAppointmentDateTime(
+        currentData?['date'],
+        currentData?['time'],
+      );
+      if (currentData?['date'] is! Timestamp ||
+          scheduledAt == null ||
+          scheduledAt.isAfter(DateTime.now())) {
+        throw StateError('لا يمكن إكمال موعد لم يحن وقته أو لم يتم التحقق من وقته.');
+      }
+    }
+
     await _service
         .appointmentDocument(
       organizationId,
@@ -233,6 +306,23 @@ class FirestoreAppointmentRepository {
       throw StateError(
         'معرّف الموعد مطلوب.',
       );
+    }
+
+    if (normalizedStatus == 'completed') {
+      final appointment = await fetchAppointmentById(
+        organizationId,
+        appointmentId,
+      );
+      final scheduledAt = parseAppointmentDateTime(
+        appointment?['date'],
+        appointment?['time'],
+      );
+      if (appointment == null ||
+          appointment['date'] is! Timestamp ||
+          scheduledAt == null ||
+          scheduledAt.isAfter(DateTime.now())) {
+        throw StateError('لا يمكن إكمال موعد لم يحن وقته أو لم يتم التحقق من وقته.');
+      }
     }
 
     await _service

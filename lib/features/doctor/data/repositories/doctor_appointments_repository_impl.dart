@@ -1,8 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/auth/models/account_role.dart';
 import '../../../../core/auth/services/firebase_auth_repository.dart';
 import '../../../../core/firestore/repositories/firestore_appointment_repository.dart';
+import '../../../../core/firestore/repositories/firestore_doctor_repository.dart';
 import '../../../../core/firestore/appointment_date_time.dart';
 import '../../domain/repositories/doctor_appointments_repository.dart';
 import '../../models/doctor_appointment.dart';
@@ -20,7 +22,8 @@ class DoctorAppointmentsRepositoryImpl
     if (organizationId == null ||
         doctorId == null ||
         organizationId.isEmpty ||
-        doctorId.isEmpty) {
+      doctorId.isEmpty ||
+      session.currentRole != AccountRole.doctor) {
       throw StateError(
         'لا توجد هوية طبيب ومؤسسة مرتبطة بجلسة المستخدم.',
       );
@@ -51,31 +54,40 @@ class DoctorAppointmentsRepositoryImpl
       );
     }
 
-    return FirebaseFirestore.instance
-        .collection('organizations')
-        .doc(organizationId)
-        .collection('appointments')
-        .where(
-      'organizationId',
-      isEqualTo: organizationId,
-    )
-        .where(
-      'doctorId',
-      isEqualTo: doctorId,
-    )
-        .snapshots()
-        .map(
-          (snapshot) {
-        return _sortAppointments(snapshot.docs
-            .map(
-              (document) => _fromMap({
-            ...document.data(),
-            'id': document.id,
-          }),
-        )
-            .toList());
-      },
-    );
+    return Stream.fromFuture(
+      FirestoreDoctorRepository.instance.fetchDoctorByIdForOrganization(
+        organizationId,
+        doctorId,
+      ),
+    ).asyncExpand((doctor) {
+      final clinicId = doctor?.clinicId;
+      if (doctor == null || clinicId == null || clinicId.trim().isEmpty) {
+        return Stream.error(
+          StateError('لا توجد عيادة نشطة مرتبطة بالطبيب الحالي.'),
+        );
+      }
+
+      return FirebaseFirestore.instance
+          .collection('organizations')
+          .doc(organizationId)
+          .collection('appointments')
+          .where('organizationId', isEqualTo: organizationId)
+          .where('doctorId', isEqualTo: doctorId)
+          .where('clinicId', whereIn: [clinicId, null])
+          .snapshots()
+          .map(
+            (snapshot) => _sortAppointments(
+              snapshot.docs
+                  .map(
+                    (document) => _fromMap({
+                      ...document.data(),
+                      'id': document.id,
+                    }),
+                  )
+                  .toList(),
+            ),
+          );
+    });
   }
 
   DoctorAppointment _fromMap(Map<String, dynamic> appointment) {

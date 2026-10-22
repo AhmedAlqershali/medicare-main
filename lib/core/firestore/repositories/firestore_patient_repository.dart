@@ -48,6 +48,10 @@ organizationId: organizationId,
 if (doctor == null || doctor.organizationId.isEmpty) {
 return [];
 }
+final clinicId = doctor.clinicId;
+if (clinicId == null || clinicId.trim().isEmpty) {
+return [];
+}
 
 final snapshot = await _service
     .patientCollectionForOrganization(doctor.organizationId)
@@ -59,6 +63,10 @@ isEqualTo: doctor.organizationId,
 'doctorId',
 isEqualTo: doctor.id,
 )
+        .where(
+    'clinicId',
+    whereIn: [clinicId, null],
+    )
     .get();
 
 return snapshot.docs
@@ -244,6 +252,9 @@ appointmentDate.day,
 appointmentTime.hour,
 appointmentTime.minute,
 );
+if (!appointmentDateTime.isAfter(DateTime.now())) {
+throw StateError('يجب أن يكون الموعد الأول بتاريخ ووقت قادمين.');
+}
 
 final appointment = <String, dynamic>{
 'id': appointmentReference.id,
@@ -254,7 +265,7 @@ final appointment = <String, dynamic>{
 'patientName': patient.name,
 'patientInitials': patient.initials,
 'clinicId': clinicId,
-'date': _formatDate(appointmentDateTime),
+'date': Timestamp.fromDate(appointmentDateTime),
 'time': _formatTime(appointmentTime),
 'type': 'زيارة',
 'status': 'upcoming',
@@ -658,12 +669,6 @@ if (!emailIndexSnapshot.exists) {
 if (batch == null) {
 await activationBatch.commit();
 }
-}
-
-String _formatDate(DateTime date) {
-return '${date.year.toString().padLeft(4, '0')}-'
-'${date.month.toString().padLeft(2, '0')}-'
-'${date.day.toString().padLeft(2, '0')}';
 }
 
 String _formatTime(TimeOfDay time) {

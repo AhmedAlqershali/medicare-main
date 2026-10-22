@@ -232,6 +232,7 @@ class FirestoreMedicalCaseRepository {
           : parseAppointmentDateTime(appointment['date'], appointment['time']);
       if (appointment == null ||
           appointment['status'] != 'completed' ||
+          appointment['date'] is! Timestamp ||
           appointmentAt == null ||
           appointmentAt.isAfter(DateTime.now()) ||
           appointmentAt.year != visitAt.year ||
@@ -284,6 +285,9 @@ class FirestoreMedicalCaseRepository {
         status != 'completed' &&
         status != 'archived') {
       throw ArgumentError.value(status, 'status');
+    }
+    if (medicalCase.type == 'pregnancy' && status == 'archived') {
+      throw StateError('تتم أرشفة حالة الحمل تلقائيًا بعد انتهاء الفترة المحددة.');
     }
     final doctor = await _requireCurrentDoctor(medicalCase.organizationId);
     final allowedTransition = switch (status) {

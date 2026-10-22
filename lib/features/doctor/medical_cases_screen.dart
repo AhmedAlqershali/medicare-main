@@ -438,7 +438,8 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
                                   icon: const Icon(Icons.check_circle_outline),
                                   label: const Text('إكمال الحالة'),
                                 ),
-                              if (!_medicalCase.isClosed)
+                              if (!_medicalCase.isClosed &&
+                                  _medicalCase.type != 'pregnancy')
                                 TextButton.icon(
                                   onPressed: _saving
                                       ? null
@@ -446,7 +447,8 @@ class _MedicalCaseDetailsScreenState extends State<MedicalCaseDetailsScreen> {
                                   icon: const Icon(Icons.archive_outlined),
                                   label: const Text('أرشفة'),
                                 ),
-                              if (_medicalCase.status == 'completed')
+                              if (_medicalCase.status == 'completed' &&
+                                  _medicalCase.type != 'pregnancy')
                                 TextButton.icon(
                                   onPressed: _saving
                                       ? null
