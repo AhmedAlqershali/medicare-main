@@ -39,7 +39,39 @@ class InvitationActivationScreenState extends State<InvitationActivationScreen>
     if (state == AppLifecycleState.resumed &&
         _awaitingEmailVerification &&
         !_loading) {
-      unawaited(_activate());
+      unawaited(_resumeActivation());
+    }
+  }
+
+  Future<void> _resumeActivation() async {
+    if (_loading) return;
+    setState(() {
+      _error = null;
+      _loading = true;
+    });
+
+    try {
+      final result = await AuthRepositoryImpl.instance.resumeActivation(
+        role: widget.role,
+        email: _emailController.text,
+      );
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _awaitingEmailVerification =
+            AuthRepositoryImpl.instance.isAwaitingEmailVerification;
+        if (!result.success) _error = result.message;
+      });
+      if (result.success) {
+        AuthNavigation.openRoleHome(context, widget.role);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _awaitingEmailVerification = false;
+        _error = error.toString();
+      });
     }
   }
 
@@ -112,7 +144,7 @@ class InvitationActivationScreenState extends State<InvitationActivationScreen>
             Text(_error!, style: const TextStyle(color: Color(0xFFC84C4C), fontWeight: FontWeight.w700)),
           ],
           const SizedBox(height: AppSpacing.xl),
-          PrimaryButton(label: widget.role == AccountRole.patient ? 'تفعيل الحساب' : 'تفعيل الحساب', icon: Icons.verified_user_outlined, onPressed: _activate, isLoading: _loading),
+          PrimaryButton(label: 'تفعيل الحساب', icon: Icons.verified_user_outlined, onPressed: _activate, isLoading: _loading),
           const SizedBox(height: AppSpacing.md),
           Text(
             'افتح رابط التحقق المرسل إلى بريدك الإلكتروني، ثم ارجع إلى التطبيق لإكمال التفعيل وتسجيل الدخول تلقائيًا.',

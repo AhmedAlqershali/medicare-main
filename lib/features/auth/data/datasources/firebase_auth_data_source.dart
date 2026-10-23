@@ -271,10 +271,14 @@ class FirebaseAuthDataSource {
     }
 
     if (!refreshedUser.emailVerified) {
-      _awaitingEmailVerification = false;
+      _awaitingEmailVerification = true;
       if (sendVerificationEmail) {
-        await refreshedUser.sendEmailVerification();
-        _awaitingEmailVerification = true;
+        try {
+          await refreshedUser.sendEmailVerification();
+        } on FirebaseAuthException {
+          _awaitingEmailVerification = false;
+          rethrow;
+        }
       }
       _session = const AuthSession.signedOut();
       return null;
@@ -285,41 +289,79 @@ class FirebaseAuthDataSource {
     return _firebaseAuth.currentUser;
   }
 
-  Future<User?> createFirebaseAccountIfNeeded({
+  Future<
+      ({
+      bool success,
+      String message,
+      UserAccount? user,
+      AccountRole? currentRole,
+      })
+  >
+  resumeActivation({
+    required AccountRole role,
     required String email,
-    required String password,
   }) async {
     final normalizedEmail = email.trim().toLowerCase();
+    final currentUser = _firebaseAuth.currentUser;
 
-    try {
-      final credential = await _firebaseAuth.createUserWithEmailAndPassword(
-        email: normalizedEmail,
-        password: password,
-      );
-
-      return credential.user;
-    } on FirebaseAuthException catch (exception) {
-      if (exception.code == 'email-already-in-use') {
-        try {
-          final credential = await _firebaseAuth.signInWithEmailAndPassword(
-            email: normalizedEmail,
-            password: password,
-          );
-
-          return credential.user;
-        } on FirebaseAuthException catch (signInException) {
-          throw FirebaseAuthException(
-            code: signInException.code,
-            message: _mapFirebaseAuthError(signInException),
-          );
-        }
-      }
-
-      throw FirebaseAuthException(
-        code: exception.code,
-        message: _mapFirebaseAuthError(exception),
+    if (currentUser == null ||
+        (currentUser.email ?? '').trim().toLowerCase() != normalizedEmail) {
+      _awaitingEmailVerification = false;
+      return (
+        success: false,
+        message: 'تعذر العثور على حساب التفعيل الحالي. ابدأ التفعيل مجددًا.',
+        user: null,
+        currentRole: null,
       );
     }
+
+    try {
+      await currentUser.reload();
+    } on FirebaseAuthException catch (exception) {
+      _awaitingEmailVerification = false;
+      return (
+        success: false,
+        message: _mapFirebaseAuthError(exception),
+        user: null,
+        currentRole: null,
+      );
+    }
+    final refreshedUser = _firebaseAuth.currentUser;
+    if (refreshedUser == null ||
+        (refreshedUser.email ?? '').trim().toLowerCase() != normalizedEmail) {
+      _awaitingEmailVerification = false;
+      return (
+        success: false,
+        message: 'تعذر تحديث حساب التفعيل. سجّل الدخول مجددًا.',
+        user: null,
+        currentRole: null,
+      );
+    }
+
+    if (!refreshedUser.emailVerified) {
+      _awaitingEmailVerification = true;
+      return (
+        success: false,
+        message: 'لم يتم التحقق من البريد بعد. افتح رابط التحقق ثم عُد إلى التطبيق.',
+        user: null,
+        currentRole: null,
+      );
+    }
+
+    _awaitingEmailVerification = false;
+    if (role == AccountRole.patient) {
+      return activatePatientAccount(
+        email: normalizedEmail,
+        password: '',
+        existingUser: refreshedUser,
+      );
+    }
+    return activateInvitation(
+      role: role,
+      email: normalizedEmail,
+      password: '',
+      existingUser: refreshedUser,
+    );
   }
 
   Future<({User? user, bool created})> _createPatientFirebaseAccount({
@@ -347,26 +389,8 @@ class FirebaseAuthDataSource {
     }
   }
 
-  Future<User?> _createFirebaseAccount({
-    required String email,
-    required String password,
-  }) async {
-    try {
-      final credential = await _firebaseAuth.createUserWithEmailAndPassword(
-        email: email.trim().toLowerCase(),
-        password: password,
-      );
-
-      return credential.user;
-    } on FirebaseAuthException catch (exception) {
-      throw FirebaseAuthException(
-        code: exception.code,
-        message: _mapFirebaseAuthError(exception),
-      );
-    }
-  }
-
   String _mapFirebaseAuthError(FirebaseAuthException exception) {
+    debugPrint('[FirebaseAuth] ${exception.code}');
     switch (exception.code) {
       case 'invalid-email':
         return 'البريد الإلكتروني غير صالح.';
@@ -381,7 +405,7 @@ class FirebaseAuthDataSource {
       case 'weak-password':
         return 'كلمة المرور ضعيفة. استخدم ٦ أحرف أو أكثر.';
       case 'too-many-requests':
-        return 'محاولات تسجيل الدخول كثيرة. حاول لاحقاً.';
+        return 'حظرت Firebase الطلبات مؤقتًا من هذا الجهاز بسبب نشاط غير معتاد. انتظر قليلًا قبل إعادة المحاولة.';
       case 'network-request-failed':
         return 'فشل الاتصال. تأكد من اتصال الإنترنت.';
       case 'invalid-credential':
@@ -713,6 +737,7 @@ class FirebaseAuthDataSource {
     required AccountRole role,
     required String email,
     required String password,
+    User? existingUser,
   }) async {
     final normalizedEmail = email.trim().toLowerCase();
 
@@ -725,7 +750,7 @@ class FirebaseAuthDataSource {
       );
     }
 
-    if (password.length < 6) {
+    if (existingUser == null && password.length < 6) {
       return (
       success: false,
       message: 'استخدم ٦ أحرف أو أكثر لكلمة المرور.',
@@ -747,14 +772,18 @@ class FirebaseAuthDataSource {
       return _activateOrganizationInvitation(
         email: normalizedEmail,
         password: password,
+        existingUser: existingUser,
       );
     }
 
     try {
-      var userCredential = await createFirebaseAccountIfNeeded(
-        email: normalizedEmail,
-        password: password,
-      );
+      final account = existingUser == null
+          ? await _createPatientFirebaseAccount(
+              email: normalizedEmail,
+              password: password,
+            )
+          : (user: existingUser, created: false);
+      var userCredential = account.user;
 
       if (userCredential == null) {
         return (
@@ -767,7 +796,7 @@ class FirebaseAuthDataSource {
 
       userCredential = await _refreshVerifiedUser(
         userCredential,
-        sendVerificationEmail: true,
+        sendVerificationEmail: account.created,
       );
       if (userCredential == null) {
         return (
@@ -944,7 +973,7 @@ class FirebaseAuthDataSource {
     } on FirebaseAuthException catch (exception) {
       return (
       success: false,
-      message: exception.message ?? _mapFirebaseAuthError(exception),
+      message: _mapFirebaseAuthError(exception),
       user: null,
       currentRole: null,
       );
@@ -976,15 +1005,18 @@ class FirebaseAuthDataSource {
   _activateOrganizationInvitation({
     required String email,
     required String password,
+    User? existingUser,
   }) async {
     User? firebaseUser;
     var createdAuthAccount = false;
 
     try {
-      final account = await _createPatientFirebaseAccount(
-        email: email,
-        password: password,
-      );
+      final account = existingUser == null
+          ? await _createPatientFirebaseAccount(
+              email: email,
+              password: password,
+            )
+          : (user: existingUser, created: false);
       firebaseUser = account.user;
       createdAuthAccount = account.created;
 
@@ -999,7 +1031,7 @@ class FirebaseAuthDataSource {
 
       firebaseUser = await _refreshVerifiedUser(
         firebaseUser,
-        sendVerificationEmail: true,
+        sendVerificationEmail: account.created,
       );
       if (firebaseUser == null) {
         return (
@@ -1074,7 +1106,7 @@ class FirebaseAuthDataSource {
     } on FirebaseAuthException catch (exception) {
       return (
       success: false,
-      message: exception.message ?? _mapFirebaseAuthError(exception),
+      message: _mapFirebaseAuthError(exception),
       user: null,
       currentRole: null,
       );
@@ -1106,6 +1138,7 @@ class FirebaseAuthDataSource {
   activatePatientAccount({
     required String email,
     required String password,
+    User? existingUser,
   }) async {
     final normalizedEmail = email.trim().toLowerCase();
 
@@ -1118,7 +1151,7 @@ class FirebaseAuthDataSource {
       );
     }
 
-    if (password.length < 6) {
+    if (existingUser == null && password.length < 6) {
       return (
       success: false,
       message: 'استخدم ٦ أحرف أو أكثر لكلمة المرور.',
@@ -1137,10 +1170,12 @@ class FirebaseAuthDataSource {
     try {
       activationStage = 'إنشاء حساب Firebase';
 
-      final account = await _createPatientFirebaseAccount(
-        email: normalizedEmail,
-        password: password,
-      );
+      final account = existingUser == null
+          ? await _createPatientFirebaseAccount(
+              email: normalizedEmail,
+              password: password,
+            )
+          : (user: existingUser, created: false);
 
       firebaseUser = account.user;
       createdAuthAccount = account.created;
@@ -1153,7 +1188,7 @@ class FirebaseAuthDataSource {
 
       firebaseUser = await _refreshVerifiedUser(
         firebaseUser,
-        sendVerificationEmail: true,
+        sendVerificationEmail: createdAuthAccount,
       );
       if (firebaseUser == null) {
         return (
@@ -1364,7 +1399,7 @@ class FirebaseAuthDataSource {
 
       final message = switch (error) {
         FirebaseAuthException exception =>
-        exception.message ?? _mapFirebaseAuthError(exception),
+        _mapFirebaseAuthError(exception),
         FirebaseException exception =>
         'فشل التفعيل في المرحلة: $activationStage '
             '(${exception.code}). ${exception.message ?? ''}',

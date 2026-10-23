@@ -69,6 +69,24 @@ class AuthRepositoryImpl implements AuthRepository {
     return AuthResult(success: result.success, message: result.message, user: result.user);
   }
 
+  Future<AuthResult> resumeActivation({
+    required AccountRole role,
+    required String email,
+  }) async {
+    final result = await _dataSource.resumeActivation(role: role, email: email);
+    if (result.success) {
+      FirebaseAuthRepository.instance.adoptSession(_dataSource.session);
+      if (role == AccountRole.patient) {
+        await FirebaseMessagingService.instance.initialize();
+      }
+    }
+    return AuthResult(
+      success: result.success,
+      message: result.message,
+      user: result.user,
+    );
+  }
+
   @override
   Future<void> logout() async {
     final uid = _dataSource.currentUser?.id;
