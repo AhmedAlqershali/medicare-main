@@ -379,8 +379,11 @@ class _DoctorPatientDetailsScreenState
 
       if (selection == null || !mounted) return;
 
+      final selectedWeekday = selection['date'];
+      if (selectedWeekday is! String) return;
+
       final selectedDate = await _pickDateForWeekday(
-        selection['date']!,
+        selectedWeekday,
       );
 
       if (selectedDate == null || !mounted) return;

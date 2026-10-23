@@ -237,10 +237,7 @@ class _HomeContentState extends State<_HomeContent> {
               SectionHeader(
                 title: 'الحالات الطبية',
                 actionLabel: 'عرض الكل',
-                onAction: () => _openMedicalCases(
-                  organizationId: organizationId,
-                  patientId: patientId,
-                ),
+                onAction: _openMedicalCasesForCurrentPatient,
               ),
               const SizedBox(height: AppSpacing.sm),
               if (_caseError != null)
@@ -263,10 +260,7 @@ class _HomeContentState extends State<_HomeContent> {
                           '${medicalCase.type} • ${_caseStatusLabel(medicalCase.status)}',
                         ),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () => _openMedicalCases(
-                          organizationId: organizationId,
-                          patientId: patientId,
-                        ),
+                        onTap: _openMedicalCasesForCurrentPatient,
                       ),
                     ),
                   ),
@@ -354,6 +348,29 @@ class _HomeContentState extends State<_HomeContent> {
           allowClinicalWrites: false,
         ),
       ),
+    );
+  }
+
+  Future<void> _openMedicalCasesForCurrentPatient() async {
+    final session = FirebaseAuthRepository.instance.session;
+    final organizationId = session.organizationId;
+    final patientId = session.patientId;
+
+    if (organizationId == null ||
+        organizationId.isEmpty ||
+        patientId == null ||
+        patientId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر تحديد بيانات المريض الحالية.'),
+        ),
+      );
+      return;
+    }
+
+    await _openMedicalCases(
+      organizationId: organizationId,
+      patientId: patientId,
     );
   }
 
