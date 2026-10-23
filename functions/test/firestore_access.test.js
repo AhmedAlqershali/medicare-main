@@ -275,6 +275,79 @@ test('medical catalog is readable by signed-in users and writable only by admins
   }));
 });
 
+test('users can access only their own profile and cannot grant themselves admin', async () => {
+  const patientDb = context(identities.patient);
+  const adminDb = context(identities.admin);
+  const forgedAdminDb = testEnvironment.authenticatedContext('forged-admin', {
+    email: 'forged-admin@example.com',
+    email_verified: true,
+    role: 'admin',
+  }).firestore();
+  const orphanDb = testEnvironment.authenticatedContext('orphan-user', {
+    email: 'orphan@example.com',
+    email_verified: true,
+  }).firestore();
+  const ownProfile = doc(patientDb, 'users/patient-a-uid');
+
+  await assertSucceeds(getDoc(ownProfile));
+  await assertFails(getDoc(doc(patientDb, 'users/patient-b-uid')));
+  await assertFails(updateDoc(ownProfile, { role: 'admin' }));
+  await assertFails(setDoc(doc(patientDb, 'admins/patient-a-uid'), {
+    role: 'admin',
+    active: true,
+  }));
+  await assertSucceeds(getDoc(doc(adminDb, 'organizations/org-a/patients/patient-a')));
+  await assertFails(getDoc(doc(forgedAdminDb, 'organizations/org-a/patients/patient-a')));
+  await assertFails(getDoc(doc(orphanDb, 'organizations/org-a/patients/patient-a')));
+  await assertFails(getDoc(doc(testEnvironment.unauthenticatedContext().firestore(), 'organizations/org-a/patients/patient-a')));
+});
+
+test('medical notes can only be created by the assigned doctor and are permanent', async () => {
+  const doctorDb = context(identities.doctor);
+  const otherDoctorDb = context(identities.otherDoctor);
+  const patientDb = context(identities.patient);
+  const notePath = 'organizations/org-a/patients/patient-a/medical_notes/note-a';
+
+  await assertSucceeds(setDoc(doc(doctorDb, notePath), {
+    text: 'Clinical note',
+    createdAt: serverTimestamp(),
+    doctorUid: identities.doctor.uid,
+    doctorName: 'Assigned Doctor',
+  }));
+  await assertFails(updateDoc(doc(doctorDb, notePath), { text: 'Changed' }));
+  await assertFails(deleteDoc(doc(doctorDb, notePath)));
+  await assertFails(setDoc(doc(otherDoctorDb, 'organizations/org-a/patients/patient-a/medical_notes/note-b'), {
+    text: 'Unauthorized note',
+    createdAt: serverTimestamp(),
+    doctorUid: identities.otherDoctor.uid,
+    doctorName: 'Other Doctor',
+  }));
+  await assertFails(setDoc(doc(patientDb, 'organizations/org-a/patients/patient-a/medical_notes/note-c'), {
+    text: 'Patient-authored note',
+    createdAt: serverTimestamp(),
+    doctorUid: identities.patient.uid,
+    doctorName: 'Patient',
+  }));
+  await assertFails(setDoc(doc(doctorDb, 'organizations/org-a/patients/patient-a/medical_notes/note-malformed'), {
+    text: 42,
+    createdAt: serverTimestamp(),
+    doctorUid: identities.doctor.uid,
+    doctorName: 'Assigned Doctor',
+  }));
+  await assertFails(setDoc(doc(doctorDb, 'organizations/org-a/patients/patient-a/medical_notes/note-empty'), {
+    text: '  ',
+    createdAt: serverTimestamp(),
+    doctorUid: identities.doctor.uid,
+    doctorName: 'Assigned Doctor',
+  }));
+  await assertFails(setDoc(doc(doctorDb, 'organizations/org-a/patients/patient-a/medical_notes/note-forged-time'), {
+    text: 'Clinical note',
+    createdAt: Timestamp.fromDate(new Date('2020-01-01T00:00:00.000Z')),
+    doctorUid: identities.doctor.uid,
+    doctorName: 'Assigned Doctor',
+  }));
+});
+
 async function seedPregnancyCase() {
   const casePath = 'organizations/org-a/patients/patient-a/medical_cases/case-a';
   await testEnvironment.withSecurityRulesDisabled(async (adminContext) => {

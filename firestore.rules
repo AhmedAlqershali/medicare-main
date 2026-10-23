@@ -1067,6 +1067,10 @@ service cloud.firestore {
         && currentUserProfile().data.organizationId == organizationId
         && currentUserProfile().data.get('doctorId', null) is string
         && request.resource.data.doctorUid == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.matches('.*\\S.*')
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.doctorName is string
         && request.resource.data.keys().hasOnly([
           'text', 'createdAt', 'doctorUid', 'doctorName'
         ])
