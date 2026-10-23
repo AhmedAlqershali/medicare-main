@@ -45,8 +45,11 @@ class FirebaseAuthDataSource {
   final FirestoreUserProfileRepository _userProfileRepository;
 
   AuthSession _session = const AuthSession.signedOut();
+  bool _awaitingEmailVerification = false;
 
   AuthSession get session => _session;
+
+  bool get isAwaitingEmailVerification => _awaitingEmailVerification;
 
   bool get isAuthenticated => _session.isAuthenticated;
 
@@ -243,6 +246,11 @@ class FirebaseAuthDataSource {
         return;
       }
 
+      if (!refreshedUser.emailVerified) {
+        _session = const AuthSession.signedOut();
+        return;
+      }
+
       await refreshedUser.getIdToken(true);
       _session = await _buildSession(refreshedUser);
     } catch (_) {
@@ -251,18 +259,28 @@ class FirebaseAuthDataSource {
     }
   }
 
-  Future<User?> _refreshVerifiedUser(User user) async {
+  Future<User?> _refreshVerifiedUser(
+    User user, {
+    bool sendVerificationEmail = false,
+  }) async {
     await user.reload();
     final refreshedUser = _firebaseAuth.currentUser;
-    if (refreshedUser == null) return null;
+    if (refreshedUser == null) {
+      _awaitingEmailVerification = false;
+      return null;
+    }
 
     if (!refreshedUser.emailVerified) {
-      await refreshedUser.sendEmailVerification();
-      await _firebaseAuth.signOut();
+      _awaitingEmailVerification = false;
+      if (sendVerificationEmail) {
+        await refreshedUser.sendEmailVerification();
+        _awaitingEmailVerification = true;
+      }
       _session = const AuthSession.signedOut();
       return null;
     }
 
+    _awaitingEmailVerification = false;
     await refreshedUser.getIdToken(true);
     return _firebaseAuth.currentUser;
   }
@@ -747,7 +765,10 @@ class FirebaseAuthDataSource {
         );
       }
 
-      userCredential = await _refreshVerifiedUser(userCredential);
+      userCredential = await _refreshVerifiedUser(
+        userCredential,
+        sendVerificationEmail: true,
+      );
       if (userCredential == null) {
         return (
           success: false,
@@ -976,7 +997,10 @@ class FirebaseAuthDataSource {
         );
       }
 
-      firebaseUser = await _refreshVerifiedUser(firebaseUser);
+      firebaseUser = await _refreshVerifiedUser(
+        firebaseUser,
+        sendVerificationEmail: true,
+      );
       if (firebaseUser == null) {
         return (
           success: false,
@@ -1127,7 +1151,10 @@ class FirebaseAuthDataSource {
 
       activationStage = 'التحقق من البريد الإلكتروني';
 
-      firebaseUser = await _refreshVerifiedUser(firebaseUser);
+      firebaseUser = await _refreshVerifiedUser(
+        firebaseUser,
+        sendVerificationEmail: true,
+      );
       if (firebaseUser == null) {
         return (
           success: false,

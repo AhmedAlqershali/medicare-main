@@ -32,6 +32,9 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   bool get isAuthenticated => _dataSource.isAuthenticated;
 
+  bool get isAwaitingEmailVerification =>
+      _dataSource.isAwaitingEmailVerification;
+
   Future<void> restoreSession() async {
     await _dataSource.restoreSession();
     if (_dataSource.isAuthenticated) {

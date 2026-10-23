@@ -77,13 +77,17 @@ return exception.message ?? 'حدث خطأ في المصادقة.';
 }
 }
 
-Future<User?> _requireVerifiedUser(User user) async {
+Future<User?> _requireVerifiedUser(
+  User user, {
+  bool sendVerificationEmail = false,
+}) async {
 await user.reload();
 final refreshedUser = _firebaseAuth.currentUser;
 if (refreshedUser == null) return null;
 if (!refreshedUser.emailVerified) {
+if (sendVerificationEmail) {
 await refreshedUser.sendEmailVerification();
-await _firebaseAuth.signOut();
+}
 _session = const AuthSession.signedOut();
 return null;
 }
@@ -471,6 +475,17 @@ message: 'تعذر إنشاء حساب المستخدم في Firebase.',
 );
 }
 
+final verifiedUser = await _requireVerifiedUser(
+userCredential,
+sendVerificationEmail: true,
+);
+if (verifiedUser == null) {
+return const AuthResult(
+success: false,
+message: 'تحقق من بريدك الإلكتروني عبر الرابط المرسل لإكمال تفعيل الدعوة.',
+);
+}
+
 final invitation = await _findPendingInvitationForEmail(
 role: role,
 email: normalizedEmail,
@@ -680,7 +695,6 @@ message:
 if (!firebaseUser.emailVerified) {
 await firebaseUser.sendEmailVerification();
 
-await _firebaseAuth.signOut();
 _session = const AuthSession.signedOut();
 
 return const AuthResult(

@@ -13,7 +13,9 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   await AuthRepositoryImpl.instance.restoreSession();
-  await FirebaseMessagingService.instance.initialize();
+  if (AuthRepositoryImpl.instance.isAuthenticated) {
+    await FirebaseMessagingService.instance.initialize();
+  }
   final themeMode = ValueNotifier<ThemeMode>(await _loadThemeMode());
   runApp(MedicareApp(themeMode: themeMode));
 }

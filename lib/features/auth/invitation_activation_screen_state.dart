@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/auth/models/account_role.dart';
@@ -8,22 +10,41 @@ import 'auth_widgets.dart';
 import 'data/repositories/auth_repository_impl.dart';
 import 'invitation_activation_screen.dart';
 
-class InvitationActivationScreenState extends State<InvitationActivationScreen> {
+class InvitationActivationScreenState extends State<InvitationActivationScreen>
+    with WidgetsBindingObserver {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   String? _error;
   bool _loading = false;
+  bool _awaitingEmailVerification = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        _awaitingEmailVerification &&
+        !_loading) {
+      unawaited(_activate());
+    }
+  }
+
   Future<void> _activate() async {
+    if (_loading) return;
     final email = _emailController.text.trim();
     final password = _passwordController.text;
     final confirmPassword = _confirmPasswordController.text;
@@ -44,6 +65,8 @@ class InvitationActivationScreenState extends State<InvitationActivationScreen> 
           : await AuthRepositoryImpl.instance.activateInvitation(role: widget.role, email: email, password: password);
       if (!mounted) return;
       setState(() => _loading = false);
+      _awaitingEmailVerification =
+          AuthRepositoryImpl.instance.isAwaitingEmailVerification;
       if (!result.success) {
         setState(() => _error = result.message);
         return;
@@ -91,7 +114,10 @@ class InvitationActivationScreenState extends State<InvitationActivationScreen> 
           const SizedBox(height: AppSpacing.xl),
           PrimaryButton(label: widget.role == AccountRole.patient ? 'تفعيل الحساب' : 'تفعيل الحساب', icon: Icons.verified_user_outlined, onPressed: _activate, isLoading: _loading),
           const SizedBox(height: AppSpacing.md),
-          Text(widget.role == AccountRole.patient ? 'لا يتم إرسال بريد فعلي. استخدم البريد نفسه الذي أضافه الطبيب.' : 'استخدم البريد الإلكتروني المرسل مع الدعوة لتنشيط الحساب في Firebase.', style: Theme.of(context).textTheme.bodyMedium),
+          Text(
+            'افتح رابط التحقق المرسل إلى بريدك الإلكتروني، ثم ارجع إلى التطبيق لإكمال التفعيل وتسجيل الدخول تلقائيًا.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
         ],
       );
 }
