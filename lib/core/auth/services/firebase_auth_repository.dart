@@ -553,6 +553,8 @@ uid: userCredential.uid,
 email: normalizedEmail,
 role: role,
 organizationId: invitation.organizationId,
+clinicId: invitation.clinicId,
+invitationId: invitation.id,
 );
 }
 

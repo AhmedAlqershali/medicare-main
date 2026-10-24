@@ -63,11 +63,20 @@ async function seedFixtures() {
         ownerUid: identities.owner.uid,
       },
       'organizations/org-b': { id: 'org-b', status: 'active' },
+      'organizations/org-unlinked': {
+        id: 'org-unlinked', email: 'unlinked@example.com', status: 'active',
+      },
       'organizations/org-a/clinics/clinic-a': {
         id: 'clinic-a', organizationId: 'org-a', status: 'active',
       },
       'organizations/org-a/clinics/clinic-b': {
         id: 'clinic-b', organizationId: 'org-a', status: 'active',
+      },
+      'organizations/org-a/invitations/invited-member': {
+        id: 'invited-member', email: 'new-organization@example.com',
+        recipientEmail: 'new-organization@example.com', role: 'organization',
+        invitedBy: identities.owner.uid, organizationId: 'org-a',
+        status: 'pending', clinicId: 'clinic-a',
       },
       'organizations/org-b/clinics/clinic-c': {
         id: 'clinic-c', organizationId: 'org-b', status: 'active',
@@ -187,6 +196,35 @@ test('clinic-scoped member can read its direct and explicitly assigned legacy pa
   await assertFails(getDoc(doc(db, 'organizations/org-b/patients/patient-other-org')));
 });
 
+test('clinic-scoped members cannot read another clinic document', async () => {
+  const db = context(identities.clinicMember);
+  await assertSucceeds(getDoc(doc(db, 'organizations/org-a/clinics/clinic-a')));
+  await assertFails(getDoc(doc(db, 'organizations/org-a/clinics/clinic-b')));
+  await assertFails(getDoc(doc(db, 'organizations/org-b/clinics/clinic-c')));
+});
+
+test('only an organization owner or admin can create a clinic', async () => {
+  const ownerDb = context(identities.owner);
+  const clinicMemberDb = context(identities.clinicMember);
+  const adminDb = context(identities.admin);
+  const clinic = {
+    id: 'new-clinic',
+    organizationId: 'org-a',
+    name: 'New clinic',
+    status: 'active',
+  };
+
+  await assertSucceeds(setDoc(doc(ownerDb, 'organizations/org-a/clinics/new-clinic'), clinic));
+  await assertFails(setDoc(doc(clinicMemberDb, 'organizations/org-a/clinics/other-new-clinic'), {
+    ...clinic,
+    id: 'other-new-clinic',
+  }));
+  await assertSucceeds(setDoc(doc(adminDb, 'organizations/org-a/clinics/admin-clinic'), {
+    ...clinic,
+    id: 'admin-clinic',
+  }));
+});
+
 test('doctor can read a directly assigned patient', async () => {
   const db = context(identities.doctor);
   await assertSucceeds(getDoc(doc(db, 'organizations/org-a/patients/patient-a')));
@@ -292,6 +330,10 @@ test('users can access only their own profile and cannot grant themselves admin'
   await assertSucceeds(getDoc(ownProfile));
   await assertFails(getDoc(doc(patientDb, 'users/patient-b-uid')));
   await assertFails(updateDoc(ownProfile, { role: 'admin' }));
+  await assertFails(updateDoc(ownProfile, { organizationId: 'org-b' }));
+  await assertFails(updateDoc(ownProfile, { doctorId: 'doctor-b' }));
+  await assertFails(updateDoc(ownProfile, { patientId: 'patient-b' }));
+  await assertFails(updateDoc(ownProfile, { clinicId: 'clinic-b' }));
   await assertFails(setDoc(doc(patientDb, 'admins/patient-a-uid'), {
     role: 'admin',
     active: true,
@@ -300,6 +342,61 @@ test('users can access only their own profile and cannot grant themselves admin'
   await assertFails(getDoc(doc(forgedAdminDb, 'organizations/org-a/patients/patient-a')));
   await assertFails(getDoc(doc(orphanDb, 'organizations/org-a/patients/patient-a')));
   await assertFails(getDoc(doc(testEnvironment.unauthenticatedContext().firestore(), 'organizations/org-a/patients/patient-a')));
+});
+
+test('organization email matching only permits linking an unclaimed organization', async () => {
+  const unlinkedOwnerDb = testEnvironment.authenticatedContext('unlinked-owner', {
+    email: 'unlinked@example.com',
+    email_verified: true,
+  }).firestore();
+  const emailImpostorDb = testEnvironment.authenticatedContext('email-impostor', {
+    email: identities.owner.email,
+    email_verified: true,
+  }).firestore();
+
+  await assertSucceeds(getDoc(doc(unlinkedOwnerDb, 'organizations/org-unlinked')));
+  await assertSucceeds(updateDoc(doc(unlinkedOwnerDb, 'organizations/org-unlinked'), {
+    firebaseUid: 'unlinked-owner',
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(getDoc(doc(emailImpostorDb, 'organizations/org-a')));
+  await assertFails(updateDoc(doc(emailImpostorDb, 'organizations/org-a'), {
+    firebaseUid: 'email-impostor',
+    updatedAt: serverTimestamp(),
+  }));
+});
+
+test('organization invitation profile creation must match its clinic and invitation', async () => {
+  const db = testEnvironment.authenticatedContext('invited-member-uid', {
+    email: 'new-organization@example.com',
+    email_verified: true,
+  }).firestore();
+  const profile = {
+    uid: 'invited-member-uid',
+    email: 'new-organization@example.com',
+    role: 'organization',
+    organizationId: 'org-a',
+    clinicId: 'clinic-b',
+    invitationId: 'invited-member',
+  };
+
+  await assertFails(setDoc(doc(db, 'users/invited-member-uid'), profile));
+  await assertSucceeds(setDoc(doc(db, 'users/invited-member-uid'), {
+    ...profile,
+    clinicId: 'clinic-a',
+  }));
+});
+
+test('patients cannot change ownership or activation fields', async () => {
+  const db = context(identities.patient);
+  const patient = doc(db, 'organizations/org-a/patients/patient-a');
+
+  await assertFails(updateDoc(patient, { organizationId: 'org-b' }));
+  await assertFails(updateDoc(patient, { doctorId: 'doctor-b' }));
+  await assertFails(updateDoc(patient, { patientId: 'patient-b' }));
+  await assertFails(updateDoc(patient, { clinicId: 'clinic-b' }));
+  await assertFails(updateDoc(patient, { firebaseUid: identities.otherPatient.uid }));
+  await assertFails(updateDoc(patient, { accountActivated: false }));
 });
 
 test('medical notes can only be created by the assigned doctor and are permanent', async () => {
@@ -507,6 +604,55 @@ test('follow-ups are append-only and restricted to the assigned doctor and patie
   }));
   await assertFails(updateDoc(doc(doctorDb, followUpPath), { notes: 'Changed' }));
   await assertFails(deleteDoc(doc(doctorDb, followUpPath)));
+});
+
+test('appointment access is scoped and clients cannot change its ownership', async () => {
+  await seedPregnancyCase();
+  const doctorDb = context(identities.doctor);
+  const otherDoctorDb = context(identities.otherDoctor);
+  const patientDb = context(identities.patient);
+  const otherPatientDb = context(identities.otherPatient);
+  const appointmentPath = 'organizations/org-a/appointments/appointment-a';
+  const appointment = doc(doctorDb, appointmentPath);
+
+  await assertSucceeds(getDoc(appointment));
+  await assertFails(getDoc(doc(otherDoctorDb, appointmentPath)));
+  await assertSucceeds(getDoc(doc(patientDb, appointmentPath)));
+  await assertFails(getDoc(doc(otherPatientDb, appointmentPath)));
+  await assertFails(updateDoc(doc(otherDoctorDb, appointmentPath), {
+    status: 'cancelled',
+  }));
+  await assertFails(updateDoc(doc(patientDb, appointmentPath), {
+    status: 'cancelled',
+  }));
+  await assertFails(updateDoc(appointment, { patientId: 'patient-b' }));
+  await assertFails(updateDoc(appointment, { doctorId: 'doctor-b' }));
+  await assertFails(updateDoc(appointment, { clinicId: 'clinic-b' }));
+  await assertFails(updateDoc(appointment, { organizationId: 'org-b' }));
+
+  const futureAppointment = doc(doctorDb, 'organizations/org-a/appointments/future-appointment');
+  await testEnvironment.withSecurityRulesDisabled(async (adminContext) => {
+    await setDoc(doc(adminContext.firestore(), 'organizations/org-a/appointments/future-appointment'), {
+      id: 'future-appointment',
+      organizationId: 'org-a',
+      patientId: 'patient-a',
+      doctorId: 'doctor-a',
+      clinicId: 'clinic-a',
+      status: 'upcoming',
+      date: Timestamp.fromDate(new Date(Date.now() + 86400000)),
+      time: '10:00',
+    });
+  });
+  await assertFails(updateDoc(futureAppointment, { status: 'completed' }));
+  await assertFails(setDoc(doc(doctorDb, 'organizations/org-a/appointments/invalid-date'), {
+    id: 'invalid-date',
+    organizationId: 'org-a',
+    patientId: 'patient-a',
+    doctorId: 'doctor-a',
+    clinicId: 'clinic-a',
+    status: 'upcoming',
+    date: '2026-10-25T10:00:00.000Z',
+  }));
 });
 
 test('medical service usage and history are append-only and cannot be written by clients', async () => {

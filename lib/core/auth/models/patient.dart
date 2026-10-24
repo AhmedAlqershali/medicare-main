@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import 'account_status.dart';
 
 class Patient {
@@ -105,11 +107,13 @@ class Patient {
         .toList() ??
         const [],
     firebaseUid: map['firebaseUid'] as String?,
-    createdAt: map['createdAt'] is String
-        ? DateTime.tryParse(map['createdAt'] as String)
-        : null,
-    updatedAt: map['updatedAt'] is String
-        ? DateTime.tryParse(map['updatedAt'] as String)
-        : null,
+    createdAt: _dateFromMap(map['createdAt']),
+    updatedAt: _dateFromMap(map['updatedAt']),
   );
+
+  static DateTime? _dateFromMap(Object? value) => switch (value) {
+        String value => DateTime.tryParse(value),
+        Timestamp value => value.toDate(),
+        _ => null,
+      };
 }
